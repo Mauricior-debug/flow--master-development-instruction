@@ -24,13 +24,17 @@ type Options = {
 export function usePaceSession(options: Options): {
   status: PaceStatus;
   hearing: boolean;
+  mic: 'unknown' | 'granted' | 'denied';
   say: (text: string) => boolean;
   note: (notice: WorkoutNotice) => void;
   setMuted: (muted: boolean) => void;
   ensure: () => void;
+  retryMic: () => void;
 } {
   const [status, setStatus] = useState<PaceStatus>('disconnected');
   const [hearing, setHearing] = useState(false);
+  const [mic, setMic] = useState<'unknown' | 'granted' | 'denied'>('unknown');
+  const [kick, setKick] = useState(0);
   const voiceRef = useRef<PaceVoice | null>(null);
   const historyRef = useRef<CallTurn[]>([]);
   const optionsRef = useRef(options);
@@ -83,10 +87,13 @@ export function usePaceSession(options: Options): {
     void (async () => {
       try {
         const permission = await requestRecordingPermissionsAsync();
-        if (!permission.granted || !alive) {
+        if (!alive) return;
+        if (!permission.granted) {
+          setMic('denied');
           setStatus('disconnected');
           return;
         }
+        setMic('granted');
         await session.connect();
         if (!alive) return;
         await stream.start();
@@ -104,7 +111,7 @@ export function usePaceSession(options: Options): {
         // Already stopped.
       }
     };
-  }, [options.enabled, options.speed, options.voice, stream]);
+  }, [kick, options.enabled, options.speed, options.voice, stream]);
 
   useEffect(() => {
     voiceRef.current?.setMuted(options.muted);
@@ -113,9 +120,11 @@ export function usePaceSession(options: Options): {
   return {
     status,
     hearing,
+    mic,
     say: (text) => voiceRef.current?.say(text) ?? false,
     note: (notice) => voiceRef.current?.note(notice),
     setMuted: (muted) => voiceRef.current?.setMuted(muted),
     ensure: () => voiceRef.current?.ensure(),
+    retryMic: () => setKick((value) => value + 1),
   };
 }

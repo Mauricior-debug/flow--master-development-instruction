@@ -17,6 +17,7 @@ import {
   addPoint,
   answerQuestion,
   averagePace,
+  coachLine,
   currentPace,
   elapsedMs,
   finishSession,
@@ -28,6 +29,7 @@ import {
   pointAlongRoute,
   practicePoint,
   resumeSession,
+  shouldSpeak,
   type Session,
 } from '../lib/engine';
 import { DB_KEY, startBackgroundUpdates, stopBackgroundUpdates } from '../lib/locationTask';
@@ -36,6 +38,8 @@ import { useUserLocation } from '../lib/useUserLocation';
 import { usePaceSession } from '../lib/pace/usePaceSession';
 import { workoutNotice } from '../lib/pace/call';
 import { distanceToPathMeters, nextMapCue } from '../lib/pace/mapCues';
+import { openSystemSettings, requestPermission } from '../lib/permissions';
+import { speakLine } from '../lib/pace/session';
 import { isRealtimeVoice, voiceTitle } from '../lib/pace/voices';
 import { useTheme } from '../theme/Theme';
 
@@ -54,8 +58,9 @@ export default function LiveRunScreen() {
   const [gpsNote, setGpsNote] = useState('');
   const [backgroundOn, setBackgroundOn] = useState(false);
   const sessionRef = useRef<Session | null>(stored?.session ?? null);
+  const liveTalk = store.coach.liveTalk === true;
   const pace = usePaceSession({
-    enabled: Boolean(stored && session && session.status !== 'finished'),
+    enabled: Boolean(liveTalk && stored && session && session.status !== 'finished'),
     muted: !store.coach.voiceEnabled,
     voice: isRealtimeVoice(store.coach.voiceId) ? store.coach.voiceId : 'marin',
     speed: store.coach.speechSpeed || 1,
@@ -111,23 +116,28 @@ export default function LiveRunScreen() {
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 500);
     const net = NetInfo.addEventListener((state) => setOffline(state.isConnected === false));
-    setAudioModeAsync({
-      playsInSilentMode: true,
-      interruptionMode: 'duckOthers',
-      allowsRecording: true,
-      shouldPlayInBackground: true,
-      allowsBackgroundRecording: true,
-      shouldRouteThroughEarpiece: false,
-    }).catch(() => undefined);
+    if (liveTalk) {
+      setAudioModeAsync({
+        playsInSilentMode: true,
+        interruptionMode: 'doNotMix',
+        allowsRecording: true,
+        shouldPlayInBackground: true,
+        allowsBackgroundRecording: true,
+        shouldRouteThroughEarpiece: false,
+      }).catch(() => undefined);
+    }
     const app = AppState.addEventListener('change', (state) => {
-      if (state === 'active') paceRef.current.ensure();
+      if (state === 'active' && liveTalk) {
+        if (paceRef.current.mic === 'denied') paceRef.current.retryMic();
+        else paceRef.current.ensure();
+      }
     });
     return () => {
       clearInterval(timer);
       net();
       app.remove();
     };
-  }, []);
+  }, [liveTalk]);
 
   useEffect(() => {
     if (!stored) return;
@@ -136,7 +146,9 @@ export default function LiveRunScreen() {
       if (!current) return 'Start a run first.';
       const latest = storeRef.current;
       latest.addMessage('you', question, stored.id);
-      if (paceRef.current.say(question)) return 'On the call.';
+      const coachNow = latest.coach;
+      const voice = isRealtimeVoice(coachNow.voiceId) ? coachNow.voiceId : 'marin';
+      if (coachNow.liveTalk && paceRef.current.say(question)) return 'On the call.';
       const unit = latest.settings.units;
       const distance = `${formatDistance(current.distanceM, unit)} ${unit}`;
       const paceLabel = formatPace(currentPace(current, unit) ?? averagePace(current, unit));
@@ -152,7 +164,14 @@ export default function LiveRunScreen() {
         latest.coach.personality,
       );
       latest.addMessage('coach', reply, stored.id);
+      if (coachNow.voiceEnabled) void speakLine(reply, voice, coachNow.speechSpeed || 1, coachNow.coachingTone ?? 'friendly');
       return reply;
+    };
+    const sayUpdate = (text: string, kind: 'start' | 'km' | 'pause' | 'resume' | 'encourage' | 'finish') => {
+      const coachNow = storeRef.current.coach;
+      if (coachNow.liveTalk || !coachNow.voiceEnabled || !shouldSpeak(kind, coachNow.speak)) return;
+      const voice = isRealtimeVoice(coachNow.voiceId) ? coachNow.voiceId : 'marin';
+      void speakLine(text, voice, coachNow.speechSpeed || 1, coachNow.coachingTone ?? 'friendly');
     };
     setRunControl({
       getSession: () => sessionRef.current ?? stored.session,
@@ -161,7 +180,8 @@ export default function LiveRunScreen() {
           if (!current) return current;
           return pauseSession(current, Date.now());
         });
-        paceRef.current.note(workoutNotice('pause', 'The runner paused the workout from the screen.'));
+        if (storeRef.current.coach.liveTalk) paceRef.current.note(workoutNotice('pause', 'The runner paused the workout from the screen.'));
+        else sayUpdate(coachLine({ kind: 'pause' }, storeRef.current.coach.personality), 'pause');
         void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       },
       resume: () => {
@@ -169,7 +189,8 @@ export default function LiveRunScreen() {
           if (!current) return current;
           return resumeSession(current, Date.now());
         });
-        paceRef.current.note(workoutNotice('resume', 'The runner resumed the workout.'));
+        if (storeRef.current.coach.liveTalk) paceRef.current.note(workoutNotice('resume', 'The runner resumed the workout.'));
+        else sayUpdate(coachLine({ kind: 'resume' }, storeRef.current.coach.personality), 'resume');
       },
       finish: () => {
         const current = sessionRef.current;
@@ -194,12 +215,13 @@ export default function LiveRunScreen() {
     if (!session || !stored || session.status !== 'running') return;
     const coach = store.coach;
     if (!coach.voiceEnabled) return;
+    const live = coach.liveTalk === true;
     const point = session.points[session.points.length - 1];
     const offRouteM = stored.planned && point ? distanceToPathMeters(point, stored.planned.coordinates) : null;
     const unit = store.settings.units;
     const paceLabel = formatPace(currentPace(session, unit) ?? averagePace(session, unit));
     const nowMs = Date.now();
-    if (nowMs - lastContextAt.current > 45000) {
+    if (live && nowMs - lastContextAt.current > 45000) {
       lastContextAt.current = nowMs;
       paceRef.current.note(workoutNotice('context', `Distance ${formatDistance(session.distanceM, unit)} ${unit}. Pace ${paceLabel}.`));
     }
@@ -218,12 +240,18 @@ export default function LiveRunScreen() {
       now: nowMs,
       lastOffRouteAt: lastOffRouteAt.current,
     });
-    if (!cue || cue.kind === 'start') return;
+    if (!cue || (live && cue.kind === 'start')) return;
     if (coach.speak === 'quiet' && (cue.kind === 'halfway' || cue.kind === 'offroute')) return;
     spokenCues.current.add(cue.id);
     if (cue.kind === 'offroute') lastOffRouteAt.current = nowMs;
-    const kind = cue.kind === 'km' ? 'km' : cue.kind;
-    paceRef.current.note(workoutNotice(kind, cue.line));
+    if (live) {
+      const kind = cue.kind === 'km' ? 'km' : cue.kind === 'halfway' ? 'halfway' : cue.kind === 'almost' ? 'almost' : 'offroute';
+      paceRef.current.note(workoutNotice(kind, cue.line));
+      return;
+    }
+    store.addMessage('coach', cue.line, stored.id);
+    const voice = isRealtimeVoice(coach.voiceId) ? coach.voiceId : 'marin';
+    void speakLine(cue.line, voice, coach.speechSpeed || 1, coach.coachingTone ?? 'friendly');
   }, [session, store, stored]);
 
   useEffect(() => {
@@ -330,7 +358,13 @@ export default function LiveRunScreen() {
   const lastYou = [...thread].reverse().find((item) => item.role === 'you')?.text;
   const lastPace = [...thread].reverse().find((item) => item.role === 'coach')?.text;
   const toneName = store.coach.coachingTone === 'energetic' ? 'Energetic' : store.coach.coachingTone === 'calm' ? 'Calm' : store.coach.coachingTone === 'focused' ? 'Focused' : 'Friendly';
-  const callState = callLabel(pace.status, pace.hearing, !store.coach.voiceEnabled);
+  const callState = callLabel(pace.status, pace.hearing, !store.coach.voiceEnabled, pace.mic);
+  async function allowMic() {
+    const result = await requestPermission('microphone');
+    store.updateSettings({ microphoneAllowed: result.granted });
+    if (result.granted) pace.retryMic();
+    else openSystemSettings();
+  }
   const runner = last ? { lon: last.lon, lat: last.lat } : null;
   const user = session.source === 'gps' ? device ?? runner : runner;
 
@@ -351,10 +385,10 @@ export default function LiveRunScreen() {
           <Pressable accessibilityRole="button" accessibilityLabel="Close map" onPress={() => (expanded ? setExpanded(false) : router.back())} style={({ pressed }) => [pill(colors.surface), pressed && { opacity: 0.7 }]}>
             <T weight="bold">{expanded ? 'Close' : 'Back'}</T>
           </Pressable>
-          <View style={pill(colors.surface)}>
-            <T weight="bold">{callState}</T>
-            <T size={11} color={colors.muted}>On the call</T>
-          </View>
+          <Pressable accessibilityRole="button" accessibilityLabel={liveTalk ? 'Switch to coach updates' : 'Turn on live conversation'} onPress={() => store.saveCoach({ liveTalk: !liveTalk, voiceEnabled: true })} style={({ pressed }) => [pill(liveTalk ? colors.lime : colors.surface), pressed && { opacity: 0.8 }]}>
+            <T weight="bold" color={liveTalk ? colors.onLime : colors.text}>{liveTalk ? 'Live' : 'Coach'}</T>
+            <T size={11} color={liveTalk ? colors.onLime : colors.muted}>{liveTalk ? 'Tap for coach' : 'Tap for live'}</T>
+          </Pressable>
           <Pressable accessibilityRole="button" onPress={() => router.push('/map-options')} style={({ pressed }) => [pill(colors.surface), pressed && { opacity: 0.7 }]}>
             <T weight="semibold">Layers</T>
           </Pressable>
@@ -371,19 +405,28 @@ export default function LiveRunScreen() {
         {!expanded ? (
           <View style={{ backgroundColor: colors.surface, borderRadius: 18, padding: 12, gap: 4 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <T size={13} weight="semibold">PACE is on the call</T>
-              <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 3, height: 14 }}>
-                {[0, 1, 2].map((bar) => (
-                  <View key={bar} style={{ width: 3, height: 6 + bar * 4, borderRadius: 2, backgroundColor: pace.hearing || pace.status === 'speaking' ? colors.lime : colors.faint }} />
-                ))}
-              </View>
+              <T size={13} weight="semibold">{liveTalk ? 'Live conversation' : 'Coach updates'}</T>
+              {liveTalk ? (
+                <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 3, height: 14 }}>
+                  {[0, 1, 2].map((bar) => (
+                    <View key={bar} style={{ width: 3, height: 6 + bar * 4, borderRadius: 2, backgroundColor: pace.hearing || pace.status === 'speaking' ? colors.lime : colors.faint }} />
+                  ))}
+                </View>
+              ) : null}
             </View>
-            <T size={12} color={colors.muted}>{store.coach.voiceEnabled ? `${callState} · Mic open` : 'Muted · Mic open'}</T>
-            <T size={11} color={colors.link} weight="semibold">YOU</T>
-            <T size={13}>{lastYou || 'The mic is open. Just talk.'}</T>
+            {liveTalk && pace.mic === 'denied' ? (
+              <Pressable accessibilityRole="button" onPress={() => void allowMic()} style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}>
+                <T weight="semibold">The microphone is off. Allow it so PACE can hear you.</T>
+                <T color={colors.link} weight="bold" style={{ marginTop: 4 }}>Allow microphone</T>
+              </Pressable>
+            ) : (
+              <T size={12} color={colors.muted}>{liveTalk ? (pace.mic === 'unknown' ? 'Checking the microphone…' : store.coach.voiceEnabled ? `${callState} · Mic open` : 'Muted · Mic open') : 'Speaks the splits. The mic stays off until you turn Live on.'}</T>
+            )}
+            {liveTalk ? <T size={11} color={colors.link} weight="semibold">YOU</T> : null}
+            {liveTalk ? <T size={13}>{lastYou || (pace.mic === 'denied' ? 'Allow the microphone, then just talk.' : 'The mic is open. Just talk.')}</T> : null}
             <T size={11} color={colors.link} weight="semibold">{voiceTitle(store.coach.voiceId).toUpperCase()}</T>
-            <T size={13} color={colors.muted}>{lastPace || 'Saying hello…'}</T>
-            <T size={12} color={colors.muted}>{`${voiceTitle(store.coach.voiceId)} · ${toneName} · ${store.coach.voiceEnabled ? 'Voice active' : 'Muted'}`}</T>
+            <T size={13} color={colors.muted}>{lastPace || (liveTalk ? 'Saying hello…' : 'I will speak at the start and at each split.')}</T>
+            <T size={12} color={colors.muted}>{`${voiceTitle(store.coach.voiceId)} · ${toneName}`}</T>
           </View>
         ) : prefs.elevation ? (
           <View style={{ backgroundColor: colors.surface, borderRadius: 18, padding: 12, alignSelf: 'flex-start' }}>
@@ -416,7 +459,8 @@ export default function LiveRunScreen() {
   );
 }
 
-function callLabel(status: 'listening' | 'thinking' | 'speaking' | 'reconnecting' | 'disconnected', hearing: boolean, muted: boolean): string {
+function callLabel(status: 'listening' | 'thinking' | 'speaking' | 'reconnecting' | 'disconnected', hearing: boolean, muted: boolean, mic: 'unknown' | 'granted' | 'denied'): string {
+  if (mic === 'denied') return 'Mic off';
   if (muted) return 'Muted';
   if (hearing) return 'You are talking';
   if (status === 'speaking') return 'Speaking';

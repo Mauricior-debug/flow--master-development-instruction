@@ -101,6 +101,7 @@ export type CoachProfile = {
   language?: string;
   milestoneAnnouncements?: boolean;
   recoveryAnnouncements?: boolean;
+  liveTalk?: boolean;
 };
 
 export type PlannedRoute = {

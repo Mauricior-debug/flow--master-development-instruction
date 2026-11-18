@@ -107,6 +107,7 @@ export class PaceVoice {
   private heardBytes = 0;
   private currentBytes = 0;
   private currentStarted = 0;
+  private holdMic = false;
   private lastHeard = '';
 
   constructor(
@@ -170,7 +171,7 @@ export class PaceVoice {
       await setIsAudioActiveAsync(true);
       await setAudioModeAsync({
         playsInSilentMode: true,
-        interruptionMode: 'duckOthers',
+        interruptionMode: 'doNotMix',
         allowsRecording: true,
         shouldPlayInBackground: true,
         allowsBackgroundRecording: true,
@@ -250,7 +251,7 @@ export class PaceVoice {
   }
 
   pushMic(buffer: ArrayBuffer, sampleRate: number): void {
-    if (!this.socket || this.socket.readyState !== WebSocket.OPEN || safetyOn) return;
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN || safetyOn || this.holdMic || this.playing) return;
     const samples = resampleInt16(new Int16Array(buffer), sampleRate, 24000);
     const bytes = new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength);
     this.send({ type: 'input_audio_buffer.append', audio: bytesToBase64(bytes) });
@@ -348,6 +349,7 @@ export class PaceVoice {
       return;
     }
     if (type === 'input_audio_buffer.speech_started') {
+      if (this.holdMic || this.playing) return;
       this.barge(false);
       this.handler.onHearing(true);
       this.setStatus('listening');
@@ -411,9 +413,13 @@ export class PaceVoice {
       return;
     }
     if (type === 'response.done' || type === 'response.output_audio.done') {
+      this.flushPending();
       this.awaitingEvent = false;
       this.pumpEvents();
-      if (!this.playing && this.queue.length === 0) this.setStatus('listening');
+      if (!this.playing && this.queue.length === 0 && this.pendingPcm.length < 2) {
+        this.holdMic = false;
+        this.setStatus('listening');
+      }
       return;
     }
     if (type === 'error') {
@@ -498,11 +504,17 @@ export class PaceVoice {
 
   private enqueue(pcm: Uint8Array): void {
     if (outputMuted || safetyOn || pcm.length === 0) return;
+    this.holdMic = true;
     this.pendingPcm = new Uint8Array(concatBytes(this.pendingPcm, pcm));
-    const min = 24000 * 2 * 0.2;
+    const min = 24000 * 2 * 0.12;
     if (this.pendingPcm.length < min) return;
+    this.flushPending();
+  }
+
+  private flushPending(): void {
+    if (this.pendingPcm.length < 2) return;
     const even = this.pendingPcm.length - (this.pendingPcm.length % 2);
-    this.queue.push(this.pendingPcm.slice(0, even));
+    this.queue.push(new Uint8Array(this.pendingPcm.slice(0, even)));
     this.pendingPcm = new Uint8Array(0);
     void this.pump();
   }
@@ -532,6 +544,7 @@ export class PaceVoice {
     } finally {
       this.currentBytes = 0;
       this.playing = false;
+      if (this.queue.length === 0 && this.pendingPcm.length < 2) this.holdMic = false;
       if (!this.closed) void this.pump();
     }
   }
@@ -540,6 +553,7 @@ export class PaceVoice {
     this.queue = [];
     this.pendingPcm = new Uint8Array(0);
     this.playing = false;
+    this.holdMic = false;
     this.players.forEach((player) => {
       try {
         player.pause();
