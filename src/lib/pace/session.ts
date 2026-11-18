@@ -1,4 +1,4 @@
-import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
+import { createAudioPlayer, setAudioModeAsync, setIsAudioActiveAsync, type AudioPlayer } from 'expo-audio';
 import { File, Paths } from 'expo-file-system';
 
 import { getRunControl } from '../runControl';
@@ -97,6 +97,7 @@ export class PaceVoice {
     this.closed = false;
     this.setStatus('disconnected');
     try {
+      await setIsAudioActiveAsync(true);
       await setAudioModeAsync({
         playsInSilentMode: true,
         interruptionMode: 'duckOthers',
@@ -343,11 +344,9 @@ export class PaceVoice {
       const wav = pcm16ToWav(next, 24000);
       const file = new File(Paths.cache, `pace-${Date.now()}.wav`);
       file.create({ overwrite: true });
-      await file.write(wav);
-      const player = createAudioPlayer(file.uri);
-      player.playbackRate = this.speed;
+      await file.write(bytesToBase64(wav), { encoding: 'base64' });
+      const player = await playSavedFile(file.uri, this.speed);
       this.players.push(player);
-      player.play();
       await new Promise((resolve) => setTimeout(resolve, Math.max(200, (next.length / 2 / 24000) * 1000)));
     } catch {
       this.setStatus('listening');
@@ -408,13 +407,7 @@ export async function previewVoice(voice: RealtimeVoiceId, speed: number): Promi
   const key = readOpenAIKey();
   if (!key) throw new Error('Voice is not configured on this build.');
   stopVoicePreview();
-  await setAudioModeAsync({
-    playsInSilentMode: true,
-    interruptionMode: 'duckOthers',
-    allowsRecording: false,
-    shouldPlayInBackground: false,
-    shouldRouteThroughEarpiece: false,
-  });
+  await prepareSpeaker();
   const response = await fetch('https://api.openai.com/v1/audio/speech', {
     method: 'POST',
     headers: {
@@ -433,10 +426,31 @@ export async function previewVoice(voice: RealtimeVoiceId, speed: number): Promi
   if (bytes.byteLength < 100) throw new Error('Voice preview came back empty.');
   const file = new File(Paths.cache, `pace-preview-${voice}.mp3`);
   file.create({ overwrite: true });
-  await file.write(bytes);
-  const player = createAudioPlayer({ uri: file.uri });
+  await file.write(bytesToBase64(bytes), { encoding: 'base64' });
+  previewPlayer = await playSavedFile(file.uri, speed);
+}
+
+async function prepareSpeaker(): Promise<void> {
+  await setIsAudioActiveAsync(true);
+  await setAudioModeAsync({
+    playsInSilentMode: true,
+    interruptionMode: 'doNotMix',
+    allowsRecording: false,
+    shouldPlayInBackground: false,
+    shouldRouteThroughEarpiece: false,
+  });
+}
+
+async function playSavedFile(uri: string, speed: number): Promise<AudioPlayer> {
+  const player = createAudioPlayer({ uri });
   player.volume = 1;
-  player.playbackRate = speed;
-  previewPlayer = player;
+  player.loop = false;
+  player.muted = false;
+  player.setPlaybackRate(speed, 'medium');
   player.play();
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  if (!player.playing && !player.isLoaded) {
+    throw new Error('The speaker did not start. Turn off silent mode, raise the volume, and try Preview again.');
+  }
+  return player;
 }
