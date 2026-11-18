@@ -33,8 +33,10 @@ import {
   type Session,
 } from '../lib/engine';
 import { DB_KEY, startBackgroundUpdates, stopBackgroundUpdates } from '../lib/locationTask';
-import { setRunControl } from '../lib/runControl';
+import { getRunControl, setRunControl } from '../lib/runControl';
 import { useUserLocation } from '../lib/useUserLocation';
+import { usePaceSession } from '../lib/pace/usePaceSession';
+import { isRealtimeVoice } from '../lib/pace/voices';
 import { useTheme } from '../theme/Theme';
 
 export default function LiveRunScreen() {
@@ -52,6 +54,49 @@ export default function LiveRunScreen() {
   const [gpsNote, setGpsNote] = useState('');
   const [backgroundOn, setBackgroundOn] = useState(false);
   const sessionRef = useRef<Session | null>(stored?.session ?? null);
+  const pace = usePaceSession({
+    enabled: Boolean(stored && session && session.status !== 'finished'),
+    voice: isRealtimeVoice(store.coach.voiceId) ? store.coach.voiceId : 'marin',
+    speed: store.coach.speechSpeed || 1,
+    getContext: () => {
+      const current = sessionRef.current;
+      const latest = storeRef.current;
+      const unit = latest.settings.units;
+      const distanceM = current?.distanceM ?? 0;
+      const plannedM = stored?.planned?.distanceM ?? 0;
+      return {
+        status: current?.status ?? 'idle',
+        distance: `${formatDistance(distanceM, unit)} ${unit}`,
+        currentPace: formatPace(current ? currentPace(current, unit) : null),
+        averagePace: formatPace(current ? averagePace(current, unit) : null),
+        time: formatDuration(current ? activeMs(current, Date.now()) : 0),
+        goal: stored?.goalLabel ?? 'Easy run',
+        remaining: plannedM > distanceM ? `${formatDistance(plannedM - distanceM, unit)} ${unit}` : 'No target left',
+        tone: latest.coach.coachingTone ?? 'friendly',
+        frequency: latest.coach.speak,
+        milestones: latest.coach.milestoneAnnouncements !== false,
+        recovery: latest.coach.recoveryAnnouncements !== false,
+        safety: false,
+      };
+    },
+    onPause: () => undefined,
+    onResume: () => undefined,
+    onFinish: () => getRunControl()?.finish(),
+    onMute: (muted) => storeRef.current.saveCoach({ voiceEnabled: !muted }),
+    onTone: (tone) => storeRef.current.saveCoach({ coachingTone: tone, personality: tone === 'calm' ? 'calm' : tone === 'energetic' ? 'motivator' : 'strategist' }),
+    onSafety: (line) => {
+      Speech.speak(line, { rate: 0.95 });
+      router.push('/safety-sheet');
+    },
+    onHeard: (text) => {
+      if (stored) storeRef.current.addMessage('you', text, stored.id);
+    },
+    onSaid: (text) => {
+      if (stored) storeRef.current.addMessage('coach', text, stored.id);
+    },
+  });
+  const paceRef = useRef(pace);
+  paceRef.current = pace;
   const storeRef = useRef(store);
   storeRef.current = store;
   const spokenKm = useRef(0);
@@ -78,8 +123,12 @@ export default function LiveRunScreen() {
     const speak = (text: string, kind: 'start' | 'km' | 'pause' | 'resume' | 'encourage' | 'finish') => {
       const coach = storeRef.current.coach;
       if (!coach.voiceEnabled || !shouldSpeak(kind, coach.speak)) return;
+      if (paceRef.current.status !== 'disconnected') {
+        paceRef.current.announce(text, kind !== 'encourage');
+        return;
+      }
       Speech.stop();
-      Speech.speak(text, { rate: 0.96 });
+      Speech.speak(text, { rate: coach.speechSpeed || 0.96 });
     };
     const ask = (question: string) => {
       const current = sessionRef.current;
@@ -149,7 +198,11 @@ export default function LiveRunScreen() {
       spokenKm.current = km;
       const pace = formatPace(averagePace(session, storeRef.current.settings.units));
       const line = coachLine({ kind: 'km', km, pace }, coach.personality);
-      Speech.speak(line);
+      if (paceRef.current.status !== 'disconnected' && coach.voiceEnabled && coach.milestoneAnnouncements !== false) {
+        paceRef.current.announce(line, true);
+      } else if (coach.voiceEnabled && shouldSpeak('km', coach.speak)) {
+        Speech.speak(line, { rate: coach.speechSpeed || 0.96 });
+      }
       storeRef.current.addMessage('coach', line, stored.id);
     }
   }, [session, stored?.id]);
@@ -275,6 +328,10 @@ export default function LiveRunScreen() {
           <Pressable accessibilityRole="button" accessibilityLabel="Close map" onPress={() => (expanded ? setExpanded(false) : router.back())} style={({ pressed }) => [pill(colors.surface), pressed && { opacity: 0.7 }]}>
             <T weight="bold">{expanded ? 'Close' : 'Back'}</T>
           </Pressable>
+          <View style={pill(colors.surface)}>
+            <T weight="bold">{paceLabel(pace.status)}</T>
+            <T size={11} color={colors.muted}>PACE</T>
+          </View>
           <Pressable accessibilityRole="button" onPress={() => router.push('/map-options')} style={({ pressed }) => [pill(colors.surface), pressed && { opacity: 0.7 }]}>
             <T weight="semibold">Layers</T>
           </Pressable>
@@ -322,6 +379,13 @@ export default function LiveRunScreen() {
       </View>
     </View>
   );
+}
+
+function paceLabel(status: 'listening' | 'thinking' | 'speaking' | 'disconnected'): string {
+  if (status === 'listening') return 'Listening';
+  if (status === 'thinking') return 'Thinking';
+  if (status === 'speaking') return 'Speaking';
+  return 'Voice off';
 }
 
 function pill(background: string) {

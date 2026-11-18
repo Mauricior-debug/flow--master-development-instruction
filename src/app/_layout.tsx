@@ -53,6 +53,10 @@ export default function RootLayout() {
                 name="map-options"
                 options={{ presentation: 'formSheet', sheetAllowedDetents: [0.58, 0.9], sheetGrabberVisible: true }}
               />
+              <Stack.Screen
+                name="safety-sheet"
+                options={{ presentation: 'formSheet', sheetAllowedDetents: [0.46, 0.8], sheetGrabberVisible: true }}
+              />
             </Stack>
           </ThemeBridge>
         </StoreProvider>

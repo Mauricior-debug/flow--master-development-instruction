@@ -91,6 +91,12 @@ export type CoachProfile = {
   personality: Personality;
   speak: SpeakFrequency;
   voiceEnabled: boolean;
+  voiceId?: string;
+  speechSpeed?: number;
+  coachingTone?: 'friendly' | 'energetic' | 'calm' | 'focused';
+  language?: string;
+  milestoneAnnouncements?: boolean;
+  recoveryAnnouncements?: boolean;
 };
 
 export type PlannedRoute = {

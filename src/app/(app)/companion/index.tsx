@@ -6,6 +6,7 @@ import { BrandHeader, Card, LinkRow, PrimaryButton, Screen, T } from '../../../c
 import { useAuthGuard } from '../../../components/ui';
 import { xpTotal } from '../../../data/store';
 import { levelFor, PERSONALITIES } from '../../../lib/engine';
+import { voiceTitle } from '../../../lib/pace/voices';
 import { useTheme } from '../../../theme/Theme';
 
 const hero = require('../../../../assets/images/onboarding-hero.jpg');
@@ -39,6 +40,12 @@ export default function CompanionHomeScreen() {
         <T size={13} color={colors.muted} style={{ marginTop: 6 }}>{`${level.into} / ${level.span} XP to the next level`}</T>
       </Card>
       <View style={{ marginTop: 12, gap: 10 }}>
+        <Card>
+          <T size={13} color={colors.link} weight="semibold">YOUR PACE COMPANION</T>
+          <T weight="bold" style={{ marginTop: 4 }}>{`Voice: ${voiceTitle(store.coach.voiceId)} · ${store.coach.coachingTone ?? 'Friendly'} · ${store.coach.speak}`}</T>
+          <T color={colors.muted}>Ready for your next run</T>
+        </Card>
+        <PrimaryButton label="Voice Studio" onPress={() => router.push('/companion/studio')} />
         <PrimaryButton label="Talk" onPress={() => router.push('/voice-sheet')} />
         <LinkRow icon="options-outline" title="Voice and personality" detail="Tone, how often they speak, speaker" onPress={() => router.push('/companion/voice')} />
         <LinkRow icon="chatbubbles-outline" title="Conversation history" detail="What you and the coach have said" onPress={() => router.push('/companion/history')} />

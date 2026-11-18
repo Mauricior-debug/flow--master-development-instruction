@@ -102,6 +102,12 @@ function defaultCoach(userId: string): CoachProfile {
     personality: 'motivator',
     speak: 'balanced',
     voiceEnabled: true,
+    voiceId: 'marin',
+    speechSpeed: 1,
+    coachingTone: 'friendly',
+    language: 'en',
+    milestoneAnnouncements: true,
+    recoveryAnnouncements: true,
   };
 }
 
