@@ -1,10 +1,12 @@
 import { createAudioPlayer, setAudioModeAsync, setIsAudioActiveAsync, type AudioPlayer } from 'expo-audio';
+import { fetch as streamFetch } from 'expo/fetch';
 import { File, Paths } from 'expo-file-system';
 
 import { getRunControl } from '../runControl';
 import { base64ToBytes, bytesToBase64, pcm16ToWav, resampleInt16 } from './audio';
 import { interpretSpeech, type PaceAction } from './commands';
 import { mintRealtimeSecret, readOpenAIKey, REALTIME_MODEL, safeVoiceError } from './openai';
+import { concatBytes, FIRST_PCM_BYTES, NEXT_PCM_BYTES, pullPcm, speechBody, spokenSpeed, type SpeechTone } from './speech';
 import { PREVIEW_LINE, type RealtimeVoiceId } from './voices';
 
 export type PaceStatus = 'listening' | 'thinking' | 'speaking' | 'disconnected';
@@ -129,6 +131,7 @@ export class PaceVoice {
             },
             tools: TOOLS,
             tool_choice: 'auto',
+            speed: spokenSpeed(this.speed, speechTone(this.handler.getContext().tone)),
           },
         });
         this.setStatus('listening');
@@ -176,7 +179,7 @@ export class PaceVoice {
   private instructions(): string {
     const context = this.handler.getContext();
     return [
-      'You are PACE, a running companion. Be brief. The runner may interrupt you.',
+      'You are PACE, a running companion. Be brief. Speak at a quick running pace and start immediately. Do not leave long pauses.',
       'Never tell someone to keep running through pain, dizziness, chest discomfort, or trouble breathing.',
       'Use tools for pause, resume, finish, mute, metrics, rest, and safety. Do not claim an action until the tool result confirms it.',
       'Finish the run only when confirmed is true.',
@@ -345,7 +348,7 @@ export class PaceVoice {
       const file = new File(Paths.cache, `pace-${Date.now()}.wav`);
       file.create({ overwrite: true });
       await file.write(bytesToBase64(wav), { encoding: 'base64' });
-      const player = await playSavedFile(file.uri, this.speed);
+      const player = await playSavedFile(file.uri, 1, false);
       this.players.push(player);
       await new Promise((resolve) => setTimeout(resolve, Math.max(200, (next.length / 2 / 24000) * 1000)));
     } catch {
@@ -392,46 +395,139 @@ function openRealtimeSocket(secret: string): WebSocket {
 }
 
 let previewPlayer: AudioPlayer | null = null;
+let speechToken = 0;
+let speechAbort: AbortController | null = null;
+const speechPlayers: AudioPlayer[] = [];
 
 export function stopVoicePreview(): void {
-  try {
-    previewPlayer?.pause();
-    previewPlayer?.remove();
-  } catch {
-    // The clip may already have ended.
-  }
+  speechToken += 1;
+  speechAbort?.abort();
+  speechAbort = null;
+  const players = [previewPlayer, ...speechPlayers];
   previewPlayer = null;
+  speechPlayers.length = 0;
+  players.forEach((player) => {
+    try {
+      player?.pause();
+      player?.remove();
+    } catch {
+      // The clip may already have ended.
+    }
+  });
 }
 
-export function previewVoice(voice: RealtimeVoiceId, speed: number): Promise<void> {
-  return speakLine(PREVIEW_LINE, voice, speed);
+export function previewVoice(voice: RealtimeVoiceId, speed: number, tone: SpeechTone = 'friendly'): Promise<void> {
+  return speakLine(PREVIEW_LINE, voice, speed, tone);
 }
 
-export async function speakLine(text: string, voice: RealtimeVoiceId, speed: number): Promise<void> {
+export async function speakLine(text: string, voice: RealtimeVoiceId, speed: number, tone: SpeechTone = 'friendly'): Promise<void> {
   const key = readOpenAIKey();
   if (!key) throw new Error('Voice is not configured on this build.');
   stopVoicePreview();
+  const token = speechToken;
+  const abort = new AbortController();
+  speechAbort = abort;
   await prepareSpeaker();
-  const response = await fetch('https://api.openai.com/v1/audio/speech', {
+  if (token !== speechToken) throw new Error('cancelled');
+  const response = await streamFetch('https://api.openai.com/v1/audio/speech', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${key}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini-tts',
-      voice,
-      input: text,
-      response_format: 'mp3',
-    }),
+    body: JSON.stringify(speechBody(text, voice, speed, tone)),
+    signal: abort.signal,
   });
+  if (token !== speechToken) throw new Error('cancelled');
   if (!response.ok) throw new Error(`Voice preview was refused (${response.status}).`);
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.byteLength < 100) throw new Error('Voice preview came back empty.');
-  const file = new File(Paths.cache, `pace-preview-${voice}.mp3`);
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.byteLength < 2) throw new Error('Voice preview came back empty.');
+    await playPcmClip(bytes, token, true);
+    return;
+  }
+
+  let pending = new Uint8Array(0);
+  let first = true;
+  let chain = Promise.resolve();
+  let resolveStarted: () => void = () => undefined;
+  let rejectStarted: (error: Error) => void = () => undefined;
+  const started = new Promise<void>((resolve, reject) => {
+    resolveStarted = resolve;
+    rejectStarted = reject;
+  });
+
+  let clipIndex = 0;
+  const enqueue = (chunk: Uint8Array, verify: boolean) => {
+    const index = clipIndex;
+    clipIndex += 1;
+    const written = writePcmClip(chunk, token, index);
+    chain = chain.then(async () => {
+      const uri = await written;
+      if (!uri || token !== speechToken) {
+        if (verify) rejectStarted(new Error('cancelled'));
+        return;
+      }
+      const player = await playSavedFile(uri, 1, verify);
+      if (token !== speechToken) return;
+      speechPlayers.push(player);
+      previewPlayer = player;
+      if (verify) resolveStarted();
+      const duration = (chunk.length / 2 / 24000) * 1000;
+      await new Promise((resolve) => setTimeout(resolve, Math.max(80, duration - 40)));
+    }).catch((error: unknown) => {
+      if (verify) rejectStarted(error instanceof Error ? error : new Error('Voice preview was refused.'));
+    });
+  };
+
+  try {
+    while (token === speechToken) {
+      const { done, value } = await reader.read();
+      if (value?.byteLength) pending = new Uint8Array(concatBytes(pending, value));
+      while (true) {
+        const pulled = pullPcm(pending, first ? FIRST_PCM_BYTES : NEXT_PCM_BYTES, Boolean(done));
+        if (!pulled.chunk) break;
+        pending = new Uint8Array(pulled.rest);
+        const verify = first;
+        first = false;
+        enqueue(pulled.chunk, verify);
+      }
+      if (done) break;
+    }
+  } catch (error) {
+    if (token !== speechToken || abort.signal.aborted) throw new Error('cancelled');
+    if (first) throw error;
+    return;
+  }
+
+  if (first) throw new Error('Voice preview came back empty.');
+  await started;
+}
+
+function speechTone(value: string): SpeechTone {
+  if (value === 'energetic' || value === 'calm' || value === 'focused' || value === 'friendly') return value;
+  return 'friendly';
+}
+
+async function writePcmClip(pcm: Uint8Array, token: number, index: number): Promise<string | null> {
+  if (token !== speechToken || pcm.length < 2) return null;
+  const wav = pcm16ToWav(pcm, 24000);
+  const file = new File(Paths.cache, `pace-say-${token}-${index}.wav`);
   file.create({ overwrite: true });
-  await file.write(bytesToBase64(bytes), { encoding: 'base64' });
-  previewPlayer = await playSavedFile(file.uri, speed);
+  await file.write(bytesToBase64(wav), { encoding: 'base64' });
+  if (token !== speechToken) return null;
+  return file.uri;
+}
+
+async function playPcmClip(pcm: Uint8Array, token: number, verify: boolean): Promise<number> {
+  const uri = await writePcmClip(pcm, token, 0);
+  if (!uri) return 0;
+  const player = await playSavedFile(uri, 1, verify);
+  speechPlayers.push(player);
+  previewPlayer = player;
+  return (pcm.length / 2 / 24000) * 1000;
 }
 
 async function prepareSpeaker(): Promise<void> {
@@ -445,16 +541,18 @@ async function prepareSpeaker(): Promise<void> {
   });
 }
 
-async function playSavedFile(uri: string, speed: number): Promise<AudioPlayer> {
+async function playSavedFile(uri: string, speed: number, verify: boolean): Promise<AudioPlayer> {
   const player = createAudioPlayer({ uri });
   player.volume = 1;
   player.loop = false;
   player.muted = false;
   player.setPlaybackRate(speed, 'medium');
   player.play();
-  await new Promise((resolve) => setTimeout(resolve, 400));
-  if (!player.playing && !player.isLoaded) {
-    throw new Error('The speaker did not start. Turn off silent mode, raise the volume, and try Preview again.');
+  if (verify) {
+    await new Promise((resolve) => setTimeout(resolve, 180));
+    if (!player.playing && !player.isLoaded) {
+      throw new Error('The speaker did not start. Turn off silent mode, raise the volume, and try Preview again.');
+    }
   }
   return player;
 }

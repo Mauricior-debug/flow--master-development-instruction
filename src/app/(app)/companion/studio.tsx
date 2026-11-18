@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { BrandHeader, Card, PrimaryButton, Screen, T } from '../../../components/ui';
@@ -21,7 +21,9 @@ export default function VoiceStudioScreen() {
   const saved = isRealtimeVoice(store.coach.voiceId) ? store.coach.voiceId : 'marin';
   const [voice, setVoice] = useState<RealtimeVoiceId>(saved);
   const [tone, setTone] = useState<(typeof TONES)[number]['id']>(store.coach.coachingTone ?? 'friendly');
-  const [speed, setSpeed] = useState(store.coach.speechSpeed || 1);
+  const savedSpeed = store.coach.speechSpeed || 1;
+  const [speed, setSpeed] = useState(savedSpeed < 1.15 ? 1.15 : savedSpeed);
+  const previewRequest = useRef(0);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -47,12 +49,22 @@ export default function VoiceStudioScreen() {
               disabled={busy}
               onPress={() => {
                 setVoice(item.id);
+                const request = previewRequest.current + 1;
+                previewRequest.current = request;
                 setBusy(true);
                 setMessage(`Playing ${item.title}…`);
-                void previewVoice(item.id, speed)
-                  .then(() => setMessage(`Playing ${item.title}. Turn your volume up if you cannot hear it.`))
-                  .catch((error: unknown) => setMessage(safeVoiceError(error)))
-                  .finally(() => setBusy(false));
+                void previewVoice(item.id, speed, tone)
+                  .then(() => {
+                    if (previewRequest.current === request) setMessage(`Playing ${item.title}. Turn your volume up if you cannot hear it.`);
+                  })
+                  .catch((error: unknown) => {
+                    if (previewRequest.current !== request) return;
+                    const message = safeVoiceError(error);
+                    if (message !== 'cancelled') setMessage(message);
+                  })
+                  .finally(() => {
+                    if (previewRequest.current === request) setBusy(false);
+                  });
               }}
               style={({ pressed }) => [{ marginTop: 8, minHeight: 44, justifyContent: 'center' }, pressed && { opacity: 0.7 }]}
             >
@@ -70,8 +82,9 @@ export default function VoiceStudioScreen() {
         </Pressable>
       ))}
       <T weight="bold" style={{ marginBottom: 8 }}>Speech speed</T>
+      <T color={colors.muted} style={{ marginBottom: 8 }}>1.15x is a running pace. The voice starts as soon as the first words are ready.</T>
       <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
-        {[0.9, 1, 1.15].map((value) => (
+        {[1.15, 1.3, 1.45].map((value) => (
           <Pressable key={value} accessibilityRole="button" onPress={() => setSpeed(value)} style={({ pressed }) => [{ flex: 1, minHeight: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: speed === value ? colors.lime : colors.surface, opacity: pressed ? 0.8 : 1 }]}>
             <T weight="bold" color={speed === value ? colors.onLime : colors.text}>{`${value}x`}</T>
           </Pressable>

@@ -125,7 +125,7 @@ export default function LiveRunScreen() {
       const coach = storeRef.current.coach;
       if (!coach.voiceEnabled || !shouldSpeak(kind, coach.speak)) return;
       const voice = isRealtimeVoice(coach.voiceId) ? coach.voiceId : 'marin';
-      void speakLine(text, voice, coach.speechSpeed || 1);
+      void speakLine(text, voice, coach.speechSpeed || 1, coach.coachingTone ?? 'friendly');
     };
     const ask = (question: string) => {
       const current = sessionRef.current;
@@ -216,7 +216,7 @@ export default function LiveRunScreen() {
     setMapLine(cue.line);
     store.addMessage('coach', cue.line, stored.id);
     const voice = isRealtimeVoice(coach.voiceId) ? coach.voiceId : 'marin';
-    void speakLine(cue.line, voice, coach.speechSpeed || 1);
+    void speakLine(cue.line, voice, coach.speechSpeed || 1, coach.coachingTone ?? 'friendly');
   }, [session, store, stored]);
 
   useEffect(() => {

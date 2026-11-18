@@ -113,7 +113,7 @@ function defaultCoach(userId: string): CoachProfile {
     speak: 'balanced',
     voiceEnabled: true,
     voiceId: 'marin',
-    speechSpeed: 1,
+    speechSpeed: 1.15,
     coachingTone: 'friendly',
     language: 'en',
     milestoneAnnouncements: true,
