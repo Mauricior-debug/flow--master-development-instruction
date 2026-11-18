@@ -60,6 +60,7 @@ export default function ProgressScreen() {
         </>
       )}
       <View style={{ gap: 10, marginTop: 16 }}>
+        <LinkRow icon="map-outline" title="Running map" detail="Routes, heatmap, and history" onPress={() => router.push('/progress/map')} />
         <LinkRow icon="footsteps-outline" title="Running history" onPress={() => router.push('/progress/runs')} />
         <LinkRow icon="trophy-outline" title="Achievements" onPress={() => router.push('/progress/achievements')} />
         <LinkRow icon="calendar-outline" title="Training plan" onPress={() => router.push('/progress/plan')} />

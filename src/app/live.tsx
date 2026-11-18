@@ -8,9 +8,9 @@ import * as Speech from 'expo-speech';
 import { useEffect, useRef, useState } from 'react';
 import { AppState, Pressable, View } from 'react-native';
 
-import { RouteLine } from '../components/charts';
-import { mapPreviewUrl } from '../lib/map';
-import { BrandHeader, Card, Screen, T } from '../components/ui';
+import { PaceMap } from '../components/PaceMap';
+import { useMapPrefs } from '../lib/mapPrefs';
+import { BrandHeader, Screen, T } from '../components/ui';
 import { useStore } from '../data/store';
 import {
   activeMs,
@@ -26,6 +26,7 @@ import {
   formatDuration,
   formatPace,
   pauseSession,
+  pointAlongRoute,
   practicePoint,
   resumeSession,
   shouldSpeak,
@@ -34,13 +35,14 @@ import {
 import { DB_KEY, startBackgroundUpdates, stopBackgroundUpdates } from '../lib/locationTask';
 import { setRunControl } from '../lib/runControl';
 import { useTheme } from '../theme/Theme';
-import { Image } from 'expo-image';
 
 export default function LiveRunScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
   const store = useStore();
   const router = useRouter();
   const colors = useTheme();
+  const prefs = useMapPrefs();
+  const [expanded, setExpanded] = useState(false);
   const stored = store.db.runs.find((item) => item.id === id);
   const [session, setSession] = useState<Session | null>(stored?.session ?? null);
   const [now, setNow] = useState(Date.now());
@@ -155,9 +157,14 @@ export default function LiveRunScreen() {
     practiceTimer.current = setInterval(() => {
       setSession((current) => {
         if (!current || current.status !== 'running') return current;
-        const index = practiceIndex.current;
-        practiceIndex.current += 1;
-        return addPoint(current, practicePoint(index, current.startedAt));
+      const index = practiceIndex.current;
+      practiceIndex.current += 1;
+      const planned = stored.planned?.coordinates;
+      const point = planned && planned.length > 1
+        ? pointAlongRoute(planned, index * 3.4, current.startedAt + index * 1000)
+        : practicePoint(index, current.startedAt);
+      if (!point) return current;
+      return addPoint(current, point);
       });
     }, 1000);
     return () => {
@@ -236,67 +243,84 @@ export default function LiveRunScreen() {
   const unit = store.settings.units;
   const last = session.points[session.points.length - 1];
   const weak = session.source === 'gps' && session.status === 'running' && (!last || now - last.t > 20000);
-  const map = mapPreviewUrl(session.points);
+  const track = session.points.map((point) => [point.lon, point.lat] as [number, number]);
+  const planned = stored.planned?.coordinates ?? [];
+  const kmCount = Math.floor(session.distanceM / (unit === 'mi' ? 1609.344 : 1000));
+  const markers = prefs.markers
+    ? Array.from({ length: kmCount }, (_, index) => {
+        const point = pointAlongRoute(track.length > 1 ? track : planned, (index + 1) * (unit === 'mi' ? 1609.344 : 1000), session.startedAt);
+        return point ? { lon: point.lon, lat: point.lat, label: `${index + 1}` } : null;
+      }).filter((item): item is { lon: number; lat: number; label: string } => Boolean(item))
+    : [];
+  const coach = store.db.messages.filter((item) => item.runId === stored.id).slice(-1)[0]?.text || 'Keep it up. I am on the route with you.';
+  const user = last ? { lon: last.lon, lat: last.lat } : planned[0] ? { lon: planned[0][0], lat: planned[0][1] } : null;
 
   return (
-    <Screen>
-      <BrandHeader back={false} right={<T color={colors.lime} weight="semibold">{session.source === 'practice' ? 'Practice' : 'GPS'}</T>} />
-      <T size={13} color={colors.muted}>{stored.goalLabel}</T>
-      <T size={56} weight="bold" style={{ marginTop: 8 }}>{formatDuration(activeMs(session, now))}</T>
-      <T color={colors.muted}>{session.status === 'paused' ? 'Paused' : 'Active time'}</T>
-      <View style={{ flexDirection: 'row', gap: 8, marginTop: 18 }}>
-        <Stat label="Distance" value={`${formatDistance(session.distanceM, unit)} ${unit}`} />
-        <Stat label="Pace" value={`${formatPace(currentPace(session, unit) ?? averagePace(session, unit))} /${unit}`} />
-        <Stat label="Elapsed" value={formatDuration(elapsedMs(session, now))} />
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      <PaceMap
+        prefs={prefs}
+        follow={session.status === 'running'}
+        user={user}
+        markers={markers}
+        tracks={[
+          ...(planned.length > 1 ? [{ id: 'planned', coordinates: planned, color: '#3E5A24', width: 6, opacity: 0.9 }] : []),
+          ...(track.length > 1 ? [{ id: 'track', coordinates: track, color: '#B6FF00', width: 5, opacity: 1 }] : []),
+        ]}
+      />
+      <View style={{ position: 'absolute', top: 54, left: 16, right: 16, gap: 10 }} pointerEvents="box-none">
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Close map" onPress={() => (expanded ? setExpanded(false) : router.back())} style={({ pressed }) => [pill(colors.surface), pressed && { opacity: 0.7 }]}>
+            <T weight="bold">{expanded ? 'Close' : 'Back'}</T>
+          </Pressable>
+          <Pressable accessibilityRole="button" onPress={() => router.push('/map-options')} style={({ pressed }) => [pill(colors.surface), pressed && { opacity: 0.7 }]}>
+            <T weight="semibold">Layers</T>
+          </Pressable>
+        </View>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <View style={pill(colors.surface)}><T weight="bold">{`${formatDistance(session.distanceM, unit)} ${unit}`}</T><T size={11} color={colors.muted}>Distance</T></View>
+          <View style={pill(colors.surface)}><T weight="bold">{`${formatPace(currentPace(session, unit) ?? averagePace(session, unit))} /${unit}`}</T><T size={11} color={colors.muted}>Pace</T></View>
+          {!expanded ? (
+            <Pressable accessibilityRole="button" accessibilityLabel="Expand map" onPress={() => setExpanded(true)} style={({ pressed }) => [pill(colors.surface), pressed && { opacity: 0.7 }]}>
+              <T weight="semibold">Expand</T>
+            </Pressable>
+          ) : null}
+        </View>
+        {!expanded ? (
+          <View style={{ backgroundColor: colors.surface, borderRadius: 18, padding: 12 }}>
+            <T size={13} weight="semibold">{kmCount > 0 ? `${kmCount} ${unit === 'mi' ? 'mi' : 'km'} done` : stored.goalLabel}</T>
+            <T color={colors.muted}>{coach}</T>
+          </View>
+        ) : prefs.elevation ? (
+          <View style={{ backgroundColor: colors.surface, borderRadius: 18, padding: 12, alignSelf: 'flex-start' }}>
+            <T size={12} color={colors.muted}>Elevation</T>
+            <T weight="bold">{stored.planned?.elevationM ? `${stored.planned.elevationM} m` : 'Not sampled'}</T>
+          </View>
+        ) : null}
       </View>
-      <View style={{ marginTop: 16 }}>
-        {map ? (
-          <Image source={{ uri: map }} style={{ height: 180, borderRadius: 18 }} contentFit="cover" accessibilityLabel="Map of the current route" />
-        ) : (
-          <RouteLine points={session.points} />
-        )}
+      <View style={{ position: 'absolute', left: 16, right: 16, bottom: 28, gap: 10 }}>
+        {offline ? <T size={12} color={colors.text}>No network. The run is still recording on this phone.</T> : null}
+        {weak || gpsNote ? <T size={12} color={colors.text}>{gpsNote || 'GPS is weak. Distance stays at the last good point.'}</T> : null}
+        {session.source === 'practice' ? <T size={12} color={colors.text}>{stored.planned ? 'Following the saved route without GPS.' : 'Practice route. These points are not your real location.'}</T> : null}
+        {backgroundOn ? <T size={12} color={colors.text}>Background location is on.</T> : null}
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+          <View>
+            <T size={28} weight="bold">{formatDuration(activeMs(session, now))}</T>
+            <T size={13} color={colors.muted}>{`${formatDistance(session.distanceM, unit)} ${unit} · ${formatPace(averagePace(session, unit))} avg`}</T>
+          </View>
+          <Pressable accessibilityRole="button" accessibilityLabel={session.status === 'paused' ? 'Resume' : 'Pause'} onPress={() => router.push('/controls-sheet')} style={({ pressed }) => [{ width: 72, height: 72, borderRadius: 36, backgroundColor: colors.lime, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.8 : 1 }]}>
+            <T weight="bold" color={colors.onLime}>{session.status === 'paused' ? 'Go' : 'Pause'}</T>
+          </Pressable>
+        </View>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <Pressable accessibilityRole="button" onPress={() => router.push('/voice-sheet')} style={({ pressed }) => [pill(colors.surface), { flex: 1 }, pressed && { opacity: 0.7 }]}><T weight="semibold">Ask</T></Pressable>
+          <Pressable accessibilityRole="button" onPress={() => router.push({ pathname: '/camera', params: { id: stored.id } })} style={({ pressed }) => [pill(colors.surface), { flex: 1 }, pressed && { opacity: 0.7 }]}><T weight="semibold">Note</T></Pressable>
+          <Pressable accessibilityRole="button" onPress={() => store.saveCoach({ voiceEnabled: !store.coach.voiceEnabled })} style={({ pressed }) => [pill(colors.surface), { flex: 1 }, pressed && { opacity: 0.7 }]}><T weight="semibold">{store.coach.voiceEnabled ? 'Mute' : 'Speak'}</T></Pressable>
+        </View>
       </View>
-      {offline ? <Note text="No network. Your run is still recording on this phone." /> : null}
-      {weak ? <Note text="GPS signal is weak. Recording continues and will fill in when the signal returns." /> : null}
-      {gpsNote ? <Note text={gpsNote} /> : null}
-      {backgroundOn ? <Note text="Background location is on, so the route can keep recording if you lock the phone." /> : null}
-      {session.source === 'practice' ? <Note text="Practice route. These points are simulated, not your real location." /> : null}
-      <Card style={{ marginTop: 14 }}>
-        <T size={13} color={colors.link} weight="semibold">COACH</T>
-        <T style={{ marginTop: 6 }}>
-          {store.db.messages.filter((item) => item.runId === stored.id).slice(-1)[0]?.text || 'I am here. Ask me about pace, distance, or what is left.'}
-        </T>
-      </Card>
-      <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
-        <Round label={session.status === 'paused' ? 'Resume' : 'Pause'} onPress={() => router.push('/controls-sheet')} />
-        <Round label="Ask" onPress={() => router.push('/voice-sheet')} />
-        <Round label="Note" onPress={() => router.push({ pathname: '/camera', params: { id: stored.id } })} />
-        <Round label={store.coach.voiceEnabled ? 'Mute' : 'Speak'} onPress={() => store.saveCoach({ voiceEnabled: !store.coach.voiceEnabled })} />
-      </View>
-    </Screen>
+    </View>
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
-  const colors = useTheme();
-  return (
-    <Card style={{ flex: 1, padding: 12 }}>
-      <T size={12} color={colors.muted}>{label}</T>
-      <T weight="bold" style={{ marginTop: 4 }}>{value}</T>
-    </Card>
-  );
-}
-
-function Note({ text }: { text: string }) {
-  const colors = useTheme();
-  return <T size={13} color={colors.muted} style={{ marginTop: 10 }}>{text}</T>;
-}
-
-function Round({ label, onPress }: { label: string; onPress: () => void }) {
-  const colors = useTheme();
-  return (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => [{ flex: 1, minHeight: 56, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: label === 'Pause' || label === 'Resume' ? colors.lime : colors.surface, opacity: pressed ? 0.75 : 1 }]}>
-      <T weight="bold" color={label === 'Pause' || label === 'Resume' ? colors.onLime : colors.text}>{label}</T>
-    </Pressable>
-  );
+function pill(background: string) {
+  return { backgroundColor: background, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 8, minHeight: 44, justifyContent: 'center' as const };
 }

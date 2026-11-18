@@ -93,6 +93,13 @@ export type CoachProfile = {
   voiceEnabled: boolean;
 };
 
+export type PlannedRoute = {
+  name: string;
+  coordinates: [number, number][];
+  distanceM: number;
+  elevationM: number;
+};
+
 export type StoredRun = {
   id: string;
   userId: string;
@@ -100,6 +107,7 @@ export type StoredRun = {
   session: Session;
   summary: string;
   noteUri?: string;
+  planned?: PlannedRoute;
 };
 
 export type Workout = {
@@ -461,6 +469,28 @@ export function currentPace(session: Session, unit: Units): number | null {
   if (meters < 8 || ms <= 0) return null;
   const unitMeters = unit === 'mi' ? MI : KM;
   return (ms / 1000) / (meters / unitMeters);
+}
+
+export function pointAlongRoute(coordinates: [number, number][], meters: number, t: number): Point | null {
+  if (coordinates.length < 2) return null;
+  let remaining = Math.max(0, meters);
+  for (let index = 1; index < coordinates.length; index += 1) {
+    const start = { lon: coordinates[index - 1][0], lat: coordinates[index - 1][1] };
+    const end = { lon: coordinates[index][0], lat: coordinates[index][1] };
+    const segment = distanceMeters(start, end);
+    if (remaining <= segment || index === coordinates.length - 1) {
+      const fraction = segment === 0 ? 0 : Math.min(1, remaining / segment);
+      return {
+        lat: start.lat + (end.lat - start.lat) * fraction,
+        lon: start.lon + (end.lon - start.lon) * fraction,
+        t,
+        accuracy: 5,
+      };
+    }
+    remaining -= segment;
+  }
+  const last = coordinates[coordinates.length - 1];
+  return { lat: last[1], lon: last[0], t, accuracy: 5 };
 }
 
 export function practicePoint(index: number, startedAt: number, origin = { lat: 51.5074, lon: -0.1278 }): Point {

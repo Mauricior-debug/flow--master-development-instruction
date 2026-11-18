@@ -25,6 +25,7 @@ import {
   type GoalType,
   type Personality,
   type RunGoal,
+  type PlannedRoute,
   type Session,
   type Settings,
   type SpeakFrequency,
@@ -62,7 +63,7 @@ type StoreValue = {
   markNotice: (id: string) => void;
   clearNotices: () => void;
   saveCoach: (patch: Partial<Omit<CoachProfile, 'userId'>>, rebuild?: boolean) => void;
-  startRun: (goalLabel: string, source: Session['source']) => string | null;
+  startRun: (goalLabel: string, source: Session['source'], planned?: PlannedRoute) => string | null;
   updateRun: (id: string, session: Session) => void;
   finishRun: (id: string, session: Session, summary: string) => void;
   attachRunNote: (id: string, uri: string) => void;
@@ -499,7 +500,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           }
         });
       },
-      startRun: (goalLabel, source) => {
+      startRun: (goalLabel, source, planned) => {
         const currentUser = requireUser();
         if (!currentUser) return null;
         const active = dbRef.current.runs.find(
@@ -512,6 +513,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           userId: currentUser.id,
           goalLabel,
           summary: '',
+          planned,
           session: {
             status: 'running',
             source,
