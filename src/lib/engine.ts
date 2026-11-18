@@ -80,6 +80,10 @@ export type Settings = {
   theme: ThemeName;
   privacyConsent: boolean;
   units: Units;
+  locationAllowed?: boolean;
+  cameraAllowed?: boolean;
+  microphoneAllowed?: boolean;
+  photosAllowed?: boolean;
 };
 
 export type CoachProfile = {

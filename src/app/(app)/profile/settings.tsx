@@ -4,6 +4,7 @@ import { View } from 'react-native';
 import { BrandHeader, Card, LinkRow, Screen, T, ToggleRow } from '../../../components/ui';
 import { useAuthGuard } from '../../../components/ui';
 import { askConfirm } from '../../../lib/confirm';
+import { requestPermission } from '../../../lib/permissions';
 import { useTheme } from '../../../theme/Theme';
 
 export default function SettingsScreen() {
@@ -22,7 +23,15 @@ export default function SettingsScreen() {
             title="Notifications"
             detail="Push reminders and alerts"
             value={store.settings.notificationsEnabled}
-            onValueChange={(value) => store.updateSettings({ notificationsEnabled: value })}
+            onValueChange={(value) => {
+              if (!value) {
+                store.updateSettings({ notificationsEnabled: false });
+                return;
+              }
+              void requestPermission('notifications').then((result) => {
+                store.updateSettings({ notificationsEnabled: result.granted });
+              });
+            }}
           />
         </Card>
         <Card>

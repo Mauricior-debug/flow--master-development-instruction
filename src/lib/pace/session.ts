@@ -4,7 +4,7 @@ import { File, Paths } from 'expo-file-system';
 import { getRunControl } from '../runControl';
 import { base64ToBytes, bytesToBase64, pcm16ToWav, resampleInt16 } from './audio';
 import { interpretSpeech, type PaceAction } from './commands';
-import { mintRealtimeSecret, REALTIME_MODEL, safeVoiceError } from './openai';
+import { mintRealtimeSecret, readOpenAIKey, REALTIME_MODEL, safeVoiceError } from './openai';
 import { PREVIEW_LINE, type RealtimeVoiceId } from './voices';
 
 export type PaceStatus = 'listening' | 'thinking' | 'speaking' | 'disconnected';
@@ -392,60 +392,51 @@ function openRealtimeSocket(secret: string): WebSocket {
   });
 }
 
+let previewPlayer: AudioPlayer | null = null;
+
+export function stopVoicePreview(): void {
+  try {
+    previewPlayer?.pause();
+    previewPlayer?.remove();
+  } catch {
+    // The clip may already have ended.
+  }
+  previewPlayer = null;
+}
+
 export async function previewVoice(voice: RealtimeVoiceId, speed: number): Promise<void> {
-  const secret = await mintRealtimeSecret(REALTIME_MODEL);
-  await new Promise<void>((resolve, reject) => {
-    const socket = openRealtimeSocket(secret);
-    const chunks: Uint8Array[] = [];
-    const finish = () => {
-      socket.close();
-      resolve();
-    };
-    socket.onopen = () => {
-      socket.send(JSON.stringify({
-        type: 'session.update',
-        session: {
-          type: 'realtime',
-          instructions: `Say exactly this and nothing else: ${PREVIEW_LINE}`,
-          output_modalities: ['audio'],
-          audio: { output: { voice, format: { type: 'audio/pcm', rate: 24000 } } },
-        },
-      }));
-      socket.send(JSON.stringify({
-        type: 'response.create',
-        response: { instructions: `Say exactly: ${PREVIEW_LINE}` },
-      }));
-    };
-    socket.onmessage = async (event) => {
-      const message = JSON.parse(String(event.data)) as { type?: string; delta?: string };
-      if ((message.type === 'response.output_audio.delta' || message.type === 'response.audio.delta') && message.delta) {
-        chunks.push(base64ToBytes(message.delta));
-      }
-      if (message.type === 'response.done' || message.type === 'response.output_audio.done') {
-        const size = chunks.reduce((sum, item) => sum + item.length, 0);
-        const pcm = new Uint8Array(size);
-        let offset = 0;
-        chunks.forEach((item) => {
-          pcm.set(item, offset);
-          offset += item.length;
-        });
-        if (pcm.length > 2) {
-          const wav = pcm16ToWav(pcm, 24000);
-          const file = new File(Paths.cache, `pace-preview-${voice}.wav`);
-          file.create({ overwrite: true });
-          await file.write(wav);
-          const player = createAudioPlayer(file.uri);
-          player.playbackRate = speed;
-          player.play();
-        }
-        finish();
-      }
-      if (message.type === 'error') {
-        socket.close();
-        reject(new Error('Voice preview failed.'));
-      }
-    };
-    socket.onerror = () => reject(new Error('Voice preview could not connect.'));
-    setTimeout(() => finish(), 12000);
+  const key = readOpenAIKey();
+  if (!key) throw new Error('Voice is not configured on this build.');
+  stopVoicePreview();
+  await setAudioModeAsync({
+    playsInSilentMode: true,
+    interruptionMode: 'duckOthers',
+    allowsRecording: false,
+    shouldPlayInBackground: false,
+    shouldRouteThroughEarpiece: false,
   });
+  const response = await fetch('https://api.openai.com/v1/audio/speech', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini-tts',
+      voice,
+      input: PREVIEW_LINE,
+      response_format: 'mp3',
+    }),
+  });
+  if (!response.ok) throw new Error(`Voice preview was refused (${response.status}).`);
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (bytes.byteLength < 100) throw new Error('Voice preview came back empty.');
+  const file = new File(Paths.cache, `pace-preview-${voice}.mp3`);
+  file.create({ overwrite: true });
+  await file.write(bytes);
+  const player = createAudioPlayer({ uri: file.uri });
+  player.volume = 1;
+  player.playbackRate = speed;
+  previewPlayer = player;
+  player.play();
 }

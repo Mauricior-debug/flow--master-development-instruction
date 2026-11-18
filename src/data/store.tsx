@@ -89,7 +89,17 @@ export type HabitInput = {
 const StoreContext = createContext<StoreValue | null>(null);
 
 function defaultSettings(userId: string): Settings {
-  return { userId, notificationsEnabled: true, theme: 'dark', privacyConsent: false, units: 'km' };
+  return {
+    userId,
+    notificationsEnabled: true,
+    theme: 'dark',
+    privacyConsent: false,
+    units: 'km',
+    locationAllowed: false,
+    cameraAllowed: false,
+    microphoneAllowed: false,
+    photosAllowed: false,
+  };
 }
 
 function defaultCoach(userId: string): CoachProfile {

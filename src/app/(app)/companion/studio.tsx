@@ -33,30 +33,32 @@ export default function VoiceStudioScreen() {
       {REALTIME_VOICES.map((item) => {
         const on = voice === item.id;
         return (
-          <Pressable key={item.id} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => setVoice(item.id)} style={({ pressed }) => [{ marginBottom: 8, opacity: pressed ? 0.8 : 1 }]}>
-            <Card style={{ borderColor: on ? colors.lime : colors.stroke, backgroundColor: on ? colors.limeDim : colors.surface }}>
+          <Card key={item.id} style={{ borderColor: on ? colors.lime : colors.stroke, backgroundColor: on ? colors.limeDim : colors.surface, marginBottom: 8 }}>
+            <Pressable accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => setVoice(item.id)} style={({ pressed }) => [{ opacity: pressed ? 0.8 : 1 }]}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}>
                 <T weight="bold">{item.title}</T>
                 {item.recommended ? <T size={12} color={colors.link} weight="bold">Recommended</T> : null}
               </View>
               <T color={colors.muted}>{item.detail}</T>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`Preview ${item.title}`}
-                onPress={() => {
-                  setBusy(true);
-                  setMessage(`Playing ${item.title}…`);
-                  void previewVoice(item.id, speed)
-                    .then(() => setMessage(`${item.title} is ready.`))
-                    .catch((error: unknown) => setMessage(safeVoiceError(error)))
-                    .finally(() => setBusy(false));
-                }}
-                style={({ pressed }) => [{ marginTop: 8, minHeight: 44, justifyContent: 'center' }, pressed && { opacity: 0.7 }]}
-              >
-                <T color={colors.link} weight="semibold">Preview</T>
-              </Pressable>
-            </Card>
-          </Pressable>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Preview ${item.title}`}
+              disabled={busy}
+              onPress={() => {
+                setVoice(item.id);
+                setBusy(true);
+                setMessage(`Playing ${item.title}…`);
+                void previewVoice(item.id, speed)
+                  .then(() => setMessage(`Playing ${item.title}. Turn your volume up if you cannot hear it.`))
+                  .catch((error: unknown) => setMessage(safeVoiceError(error)))
+                  .finally(() => setBusy(false));
+              }}
+              style={({ pressed }) => [{ marginTop: 8, minHeight: 44, justifyContent: 'center' }, pressed && { opacity: 0.7 }]}
+            >
+              <T color={colors.link} weight="semibold">{busy && voice === item.id ? 'Playing…' : 'Preview'}</T>
+            </Pressable>
+          </Card>
         );
       })}
       <T weight="bold" style={{ marginTop: 8, marginBottom: 8 }}>How should your companion speak?</T>
