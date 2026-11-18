@@ -403,7 +403,11 @@ export function stopVoicePreview(): void {
   previewPlayer = null;
 }
 
-export async function previewVoice(voice: RealtimeVoiceId, speed: number): Promise<void> {
+export function previewVoice(voice: RealtimeVoiceId, speed: number): Promise<void> {
+  return speakLine(PREVIEW_LINE, voice, speed);
+}
+
+export async function speakLine(text: string, voice: RealtimeVoiceId, speed: number): Promise<void> {
   const key = readOpenAIKey();
   if (!key) throw new Error('Voice is not configured on this build.');
   stopVoicePreview();
@@ -417,7 +421,7 @@ export async function previewVoice(voice: RealtimeVoiceId, speed: number): Promi
     body: JSON.stringify({
       model: 'gpt-4o-mini-tts',
       voice,
-      input: PREVIEW_LINE,
+      input: text,
       response_format: 'mp3',
     }),
   });

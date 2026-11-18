@@ -36,7 +36,9 @@ import { DB_KEY, startBackgroundUpdates, stopBackgroundUpdates } from '../lib/lo
 import { getRunControl, setRunControl } from '../lib/runControl';
 import { useUserLocation } from '../lib/useUserLocation';
 import { usePaceSession } from '../lib/pace/usePaceSession';
-import { isRealtimeVoice } from '../lib/pace/voices';
+import { distanceToPathMeters, nextMapCue } from '../lib/pace/mapCues';
+import { speakLine } from '../lib/pace/session';
+import { isRealtimeVoice, voiceTitle } from '../lib/pace/voices';
 import { useTheme } from '../theme/Theme';
 
 export default function LiveRunScreen() {
@@ -99,7 +101,6 @@ export default function LiveRunScreen() {
   paceRef.current = pace;
   const storeRef = useRef(store);
   storeRef.current = store;
-  const spokenKm = useRef(0);
   const practiceIndex = useRef(stored?.session.points.length ?? 0);
   const watch = useRef<Location.LocationSubscription | null>(null);
   const practiceTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -123,12 +124,8 @@ export default function LiveRunScreen() {
     const speak = (text: string, kind: 'start' | 'km' | 'pause' | 'resume' | 'encourage' | 'finish') => {
       const coach = storeRef.current.coach;
       if (!coach.voiceEnabled || !shouldSpeak(kind, coach.speak)) return;
-      if (paceRef.current.status !== 'disconnected') {
-        paceRef.current.announce(text, kind !== 'encourage');
-        return;
-      }
-      Speech.stop();
-      Speech.speak(text, { rate: coach.speechSpeed || 0.96 });
+      const voice = isRealtimeVoice(coach.voiceId) ? coach.voiceId : 'marin';
+      void speakLine(text, voice, coach.speechSpeed || 1);
     };
     const ask = (question: string) => {
       const current = sessionRef.current;
@@ -184,28 +181,43 @@ export default function LiveRunScreen() {
       },
       ask,
     });
-    if (sessionRef.current && sessionRef.current.points.length === 0) {
-      speak(coachLine({ kind: 'start' }, storeRef.current.coach.personality), 'start');
-    }
     return () => setRunControl(null);
   }, [router, stored?.id]);
 
+  const spokenCues = useRef(new Set<string>());
+  const lastOffRouteAt = useRef(0);
+  const [mapLine, setMapLine] = useState('');
+
   useEffect(() => {
-    if (!session || !stored) return;
-    const km = Math.floor(session.distanceM / 1000);
-    const coach = storeRef.current.coach;
-    if (km > spokenKm.current && coach.voiceEnabled && shouldSpeak('km', coach.speak)) {
-      spokenKm.current = km;
-      const pace = formatPace(averagePace(session, storeRef.current.settings.units));
-      const line = coachLine({ kind: 'km', km, pace }, coach.personality);
-      if (paceRef.current.status !== 'disconnected' && coach.voiceEnabled && coach.milestoneAnnouncements !== false) {
-        paceRef.current.announce(line, true);
-      } else if (coach.voiceEnabled && shouldSpeak('km', coach.speak)) {
-        Speech.speak(line, { rate: coach.speechSpeed || 0.96 });
-      }
-      storeRef.current.addMessage('coach', line, stored.id);
-    }
-  }, [session, stored?.id]);
+    if (!session || !stored || session.status !== 'running') return;
+    const coach = store.coach;
+    if (!coach.voiceEnabled || coach.milestoneAnnouncements === false) return;
+    const point = session.points[session.points.length - 1];
+    const offRouteM = stored.planned && point ? distanceToPathMeters(point, stored.planned.coordinates) : null;
+    const unit = store.settings.units;
+    const cue = nextMapCue({
+      distanceM: session.distanceM,
+      status: session.status,
+      plannedM: stored.planned?.distanceM ?? 0,
+      routeName: stored.planned?.name || stored.goalLabel,
+      offRouteM,
+      unit,
+      paceLabel: formatPace(currentPace(session, unit) ?? averagePace(session, unit)),
+      voiceName: voiceTitle(coach.voiceId),
+      tone: coach.coachingTone ?? 'friendly',
+      spoken: spokenCues.current,
+      now: Date.now(),
+      lastOffRouteAt: lastOffRouteAt.current,
+    });
+    if (!cue) return;
+    if (coach.speak === 'quiet' && (cue.kind === 'halfway' || cue.kind === 'offroute')) return;
+    spokenCues.current.add(cue.id);
+    if (cue.kind === 'offroute') lastOffRouteAt.current = Date.now();
+    setMapLine(cue.line);
+    store.addMessage('coach', cue.line, stored.id);
+    const voice = isRealtimeVoice(coach.voiceId) ? coach.voiceId : 'marin';
+    void speakLine(cue.line, voice, coach.speechSpeed || 1);
+  }, [session, store, stored]);
 
   useEffect(() => {
     if (!stored || stored.session.source !== 'practice') return;
@@ -347,8 +359,8 @@ export default function LiveRunScreen() {
         </View>
         {!expanded ? (
           <View style={{ backgroundColor: colors.surface, borderRadius: 18, padding: 12 }}>
-            <T size={13} weight="semibold">{kmCount > 0 ? `${kmCount} ${unit === 'mi' ? 'mi' : 'km'} done` : stored.goalLabel}</T>
-            <T color={colors.muted}>{coach}</T>
+            <T size={13} weight="semibold">{`${voiceTitle(store.coach.voiceId)} · ${kmCount > 0 ? `${kmCount} ${unit === 'mi' ? 'mi' : 'km'} done` : stored.goalLabel}`}</T>
+            <T color={colors.muted}>{mapLine || coach}</T>
           </View>
         ) : prefs.elevation ? (
           <View style={{ backgroundColor: colors.surface, borderRadius: 18, padding: 12, alignSelf: 'flex-start' }}>
