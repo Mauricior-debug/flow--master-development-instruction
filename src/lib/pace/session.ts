@@ -5,11 +5,12 @@ import { File, Paths } from 'expo-file-system';
 import { getRunControl } from '../runControl';
 import { base64ToBytes, bytesToBase64, pcm16ToWav, resampleInt16 } from './audio';
 import { interpretSpeech, type PaceAction } from './commands';
-import { mintRealtimeSecret, readOpenAIKey, REALTIME_MODEL, safeVoiceError } from './openai';
+import { mintRealtimeSecret, readOpenAIKey, REALTIME_MODEL } from './openai';
+import { CALL_VAD, callInstructions, greetingText, rememberTurn, resumeText, textItem, truncateEvent, type CallTurn, type WorkoutNotice } from './call';
 import { concatBytes, FIRST_PCM_BYTES, NEXT_PCM_BYTES, pullPcm, speechBody, spokenSpeed, type SpeechTone } from './speech';
-import { PREVIEW_LINE, type RealtimeVoiceId } from './voices';
+import { PREVIEW_LINE, voiceTitle, type RealtimeVoiceId } from './voices';
 
-export type PaceStatus = 'listening' | 'thinking' | 'speaking' | 'disconnected';
+export type PaceStatus = 'listening' | 'thinking' | 'speaking' | 'reconnecting' | 'disconnected';
 
 export type PaceContext = {
   status: string;
@@ -37,6 +38,7 @@ type Handler = {
   onSafety: (line: string) => void;
   onHeard: (text: string) => void;
   onSaid: (text: string) => void;
+  onHearing: (hearing: boolean) => void;
 };
 
 const TOOLS = [
@@ -85,8 +87,26 @@ export class PaceVoice {
   private socket: WebSocket | null = null;
   private players: AudioPlayer[] = [];
   private queue: Uint8Array[] = [];
+  private pendingPcm = new Uint8Array(0);
   private playing = false;
   private closed = false;
+  private generation = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectAttempt = 0;
+  private greeted = false;
+  private callStarted = false;
+  private opening = false;
+  private wantMute = false;
+  private history: CallTurn[] = [];
+  private latestFact = '';
+  private spokenQueue: string[] = [];
+  private awaitingEvent = false;
+  private itemId = '';
+  private responseId = '';
+  private ignored = new Set<string>();
+  private heardBytes = 0;
+  private currentBytes = 0;
+  private currentStarted = 0;
   private lastHeard = '';
 
   constructor(
@@ -95,9 +115,57 @@ export class PaceVoice {
     private handler: Handler,
   ) {}
 
+  restore(turns: CallTurn[]): void {
+    this.history = turns.slice(-16);
+    this.greeted = this.history.length > 0;
+  }
+
+  historySnapshot(): CallTurn[] {
+    return this.history.slice();
+  }
+
+  setMuted(muted: boolean): void {
+    const wasMuted = this.wantMute;
+    this.wantMute = muted;
+    outputMuted = muted;
+    if (muted) {
+      this.stopSpeaking();
+      return;
+    }
+    if (wasMuted && !this.greeted && this.socket?.readyState === WebSocket.OPEN) this.beginCall();
+  }
+
+  say(text: string): boolean {
+    const clean = text.trim();
+    if (!clean || !this.socket || this.socket.readyState !== WebSocket.OPEN) return false;
+    this.history = rememberTurn(this.history, 'you', clean);
+    this.send(textItem(clean));
+    this.send({ type: 'response.create' });
+    this.setStatus('thinking');
+    return true;
+  }
+
+  note(notice: WorkoutNotice): void {
+    this.latestFact = notice.text;
+    if (!notice.speak) {
+      this.pushInstructions();
+      return;
+    }
+    this.spokenQueue.push(notice.text);
+    if (notice.interrupt) this.barge(true);
+    this.pumpEvents();
+  }
+
   async connect(): Promise<void> {
-    this.closed = false;
-    this.setStatus('disconnected');
+    if (this.closed || this.opening) return;
+    this.opening = true;
+    this.callStarted = false;
+    const generation = this.generation + 1;
+    this.generation = generation;
+    this.socket?.close();
+    this.socket = null;
+    outputMuted = this.wantMute;
+    if (this.reconnectAttempt === 0) this.setStatus('disconnected');
     try {
       await setIsAudioActiveAsync(true);
       await setAudioModeAsync({
@@ -108,10 +176,14 @@ export class PaceVoice {
         allowsBackgroundRecording: true,
         shouldRouteThroughEarpiece: false,
       });
+      if (generation !== this.generation || this.closed) return;
       const secret = await mintRealtimeSecret(REALTIME_MODEL);
+      if (generation !== this.generation || this.closed) return;
       const socket = openRealtimeSocket(secret);
       this.socket = socket;
       socket.onopen = () => {
+        if (generation !== this.generation) return;
+        this.reconnectAttempt = 0;
         this.send({
           type: 'session.update',
           session: {
@@ -121,7 +193,7 @@ export class PaceVoice {
             audio: {
               input: {
                 format: { type: 'audio/pcm', rate: 24000 },
-                turn_detection: { type: 'server_vad', interrupt_response: true, create_response: true },
+                turn_detection: CALL_VAD,
                 transcription: { model: 'gpt-4o-mini-transcribe' },
               },
               output: {
@@ -135,20 +207,42 @@ export class PaceVoice {
           },
         });
         this.setStatus('listening');
+        setTimeout(() => {
+          if (generation !== this.generation || this.callStarted || this.closed) return;
+          this.callStarted = true;
+          this.beginCall();
+        }, 700);
       };
-      socket.onmessage = (event) => this.onMessage(String(event.data));
-      socket.onerror = () => this.setStatus('disconnected');
+      socket.onmessage = (event) => {
+        if (generation === this.generation) this.onMessage(String(event.data));
+      };
+      socket.onerror = () => {
+        if (generation === this.generation) this.setStatus(this.closed ? 'disconnected' : 'reconnecting');
+      };
       socket.onclose = () => {
-        if (!this.closed) this.setStatus('disconnected');
+        if (generation !== this.generation || this.closed) return;
+        this.scheduleReconnect();
       };
-    } catch (error) {
-      this.setStatus('disconnected');
-      throw new Error(safeVoiceError(error));
+    } catch {
+      if (generation !== this.generation || this.closed) return;
+      this.scheduleReconnect();
+    } finally {
+      this.opening = false;
     }
+  }
+
+  ensure(): void {
+    if (this.closed || this.opening || this.reconnectTimer) return;
+    const state = this.socket?.readyState;
+    if (state === WebSocket.OPEN || state === WebSocket.CONNECTING) return;
+    this.scheduleReconnect();
   }
 
   close(): void {
     this.closed = true;
+    this.generation += 1;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
     this.stopSpeaking();
     this.socket?.close();
     this.socket = null;
@@ -162,32 +256,81 @@ export class PaceVoice {
     this.send({ type: 'input_audio_buffer.append', audio: bytesToBase64(bytes) });
   }
 
-  announce(text: string, important: boolean): void {
-    if (outputMuted || safetyOn || !important) return;
-    lastInstruction = text;
-    this.send({
-      type: 'conversation.item.create',
-      item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: `[workout event] ${text}` }] },
-    });
-    this.send({ type: 'response.create' });
-  }
-
-  updateInstructions(): void {
+  private pushInstructions(): void {
     this.send({ type: 'session.update', session: { instructions: this.instructions() } });
   }
 
   private instructions(): string {
     const context = this.handler.getContext();
-    return [
-      'You are PACE, a running companion. Be brief. Speak at a quick running pace and start immediately. Do not leave long pauses.',
-      'Never tell someone to keep running through pain, dizziness, chest discomfort, or trouble breathing.',
-      'Use tools for pause, resume, finish, mute, metrics, rest, and safety. Do not claim an action until the tool result confirms it.',
-      'Finish the run only when confirmed is true.',
-      'Do not ask for raw GPS coordinates.',
-      `Status ${context.status}. Distance ${context.distance}. Pace ${context.currentPace}. Average ${context.averagePace}. Time ${context.time}.`,
-      `Goal ${context.goal}. Remaining ${context.remaining}. Tone ${context.tone}. Frequency ${context.frequency}.`,
-      context.safety ? 'Safety mode is on. Only help them stop and get safe.' : 'Ordinary encouragement stays short.',
-    ].join(' ');
+    return callInstructions({
+      voiceName: voiceTitle(this.voice),
+      tone: context.tone,
+      status: context.status,
+      distance: context.distance,
+      currentPace: context.currentPace,
+      averagePace: context.averagePace,
+      time: context.time,
+      goal: context.goal,
+      remaining: context.remaining,
+      frequency: context.frequency,
+      fact: this.latestFact,
+    });
+  }
+
+  private scheduleReconnect(): void {
+    if (this.closed || this.reconnectTimer) return;
+    this.setStatus('reconnecting');
+    const wait = Math.min(8000, 1000 * 2 ** this.reconnectAttempt);
+    this.reconnectAttempt += 1;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (!this.closed) void this.connect().catch(() => undefined);
+    }, wait);
+  }
+
+  private beginCall(): void {
+    if (this.wantMute || safetyOn) return;
+    if (!this.greeted) {
+      this.greeted = true;
+      this.send(textItem(greetingText(voiceTitle(this.voice))));
+    } else {
+      this.send(textItem(resumeText(this.history)));
+    }
+    this.send({ type: 'response.create' });
+    this.awaitingEvent = false;
+    this.pumpEvents();
+  }
+
+  private pumpEvents(): void {
+    if (this.awaitingEvent || this.wantMute || safetyOn || this.socket?.readyState !== WebSocket.OPEN) return;
+    const text = this.spokenQueue.shift();
+    if (!text) return;
+    this.awaitingEvent = true;
+    this.send(textItem(`Workout event. React in one short sentence, in your own words, then let the runner talk. ${text}`));
+    this.send({ type: 'response.create' });
+  }
+
+  private barge(cancel: boolean): void {
+    const heard = this.heardMs();
+    const itemId = this.itemId;
+    if (this.responseId) {
+      this.ignored.add(this.responseId);
+      if (this.ignored.size > 20) this.ignored.clear();
+    }
+    this.stopSpeaking();
+    this.pendingPcm = new Uint8Array(0);
+    if (cancel) this.send({ type: 'response.cancel' });
+    if (itemId && heard > 0) this.send(truncateEvent(itemId, heard));
+    this.itemId = '';
+    this.heardBytes = 0;
+    this.currentBytes = 0;
+  }
+
+  private heardMs(): number {
+    const partial = this.currentBytes > 0 && this.currentStarted > 0
+      ? Math.min(this.currentBytes, ((Date.now() - this.currentStarted) / 1000) * 48000)
+      : 0;
+    return ((this.heardBytes + partial) / 2 / 24000) * 1000;
   }
 
   private onMessage(raw: string): void {
@@ -198,16 +341,28 @@ export class PaceVoice {
       return;
     }
     const type = String(event.type ?? '');
+    if (type === 'session.updated') {
+      if (this.callStarted) return;
+      this.callStarted = true;
+      this.beginCall();
+      return;
+    }
     if (type === 'input_audio_buffer.speech_started') {
-      this.stopSpeaking();
-      this.send({ type: 'response.cancel' });
+      this.barge(false);
+      this.handler.onHearing(true);
       this.setStatus('listening');
+      return;
+    }
+    if (type === 'input_audio_buffer.speech_stopped') {
+      this.handler.onHearing(false);
+      this.setStatus('thinking');
       return;
     }
     if (type === 'conversation.item.input_audio_transcription.completed' || type.endsWith('input_audio_transcription.completed')) {
       const transcript = String(event.transcript ?? '');
       if (transcript && transcript !== this.lastHeard) {
         this.lastHeard = transcript;
+        this.history = rememberTurn(this.history, 'you', transcript);
         this.handler.onHeard(transcript);
         this.applyLocal(transcript);
       }
@@ -215,7 +370,17 @@ export class PaceVoice {
       return;
     }
     if (type === 'response.output_audio.delta' || type === 'response.audio.delta') {
+      const responseId = String(event.response_id ?? '');
+      if (responseId && this.ignored.has(responseId)) return;
+      if (responseId && responseId !== this.responseId) {
+        this.responseId = responseId;
+        this.heardBytes = 0;
+        this.currentBytes = 0;
+      }
+      const itemId = String(event.item_id ?? '');
+      if (itemId) this.itemId = itemId;
       if (!outputMuted && typeof event.delta === 'string') this.enqueue(base64ToBytes(event.delta));
+      this.handler.onHearing(false);
       this.setStatus('speaking');
       return;
     }
@@ -223,6 +388,7 @@ export class PaceVoice {
       const text = String(event.transcript ?? '');
       if (text) {
         lastInstruction = text;
+        this.history = rememberTurn(this.history, 'pace', text);
         this.handler.onSaid(text);
       }
       return;
@@ -245,6 +411,8 @@ export class PaceVoice {
       return;
     }
     if (type === 'response.done' || type === 'response.output_audio.done') {
+      this.awaitingEvent = false;
+      this.pumpEvents();
       if (!this.playing && this.queue.length === 0) this.setStatus('listening');
       return;
     }
@@ -329,8 +497,13 @@ export class PaceVoice {
   }
 
   private enqueue(pcm: Uint8Array): void {
-    if (outputMuted || safetyOn) return;
-    this.queue.push(pcm);
+    if (outputMuted || safetyOn || pcm.length === 0) return;
+    this.pendingPcm = new Uint8Array(concatBytes(this.pendingPcm, pcm));
+    const min = 24000 * 2 * 0.2;
+    if (this.pendingPcm.length < min) return;
+    const even = this.pendingPcm.length - (this.pendingPcm.length % 2);
+    this.queue.push(this.pendingPcm.slice(0, even));
+    this.pendingPcm = new Uint8Array(0);
     void this.pump();
   }
 
@@ -338,10 +511,12 @@ export class PaceVoice {
     if (this.playing || outputMuted || safetyOn) return;
     const next = this.queue.shift();
     if (!next || next.length < 2) {
-      this.setStatus('listening');
+      if (this.queue.length === 0 && this.pendingPcm.length < 2) this.setStatus('listening');
       return;
     }
     this.playing = true;
+    this.currentBytes = next.length;
+    this.currentStarted = Date.now();
     this.setStatus('speaking');
     try {
       const wav = pcm16ToWav(next, 24000);
@@ -350,10 +525,12 @@ export class PaceVoice {
       await file.write(bytesToBase64(wav), { encoding: 'base64' });
       const player = await playSavedFile(file.uri, 1, false);
       this.players.push(player);
-      await new Promise((resolve) => setTimeout(resolve, Math.max(200, (next.length / 2 / 24000) * 1000)));
+      await new Promise((resolve) => setTimeout(resolve, Math.max(120, (next.length / 2 / 24000) * 1000 - 30)));
+      this.heardBytes += next.length;
     } catch {
       this.setStatus('listening');
     } finally {
+      this.currentBytes = 0;
       this.playing = false;
       if (!this.closed) void this.pump();
     }
@@ -361,6 +538,7 @@ export class PaceVoice {
 
   private stopSpeaking(): void {
     this.queue = [];
+    this.pendingPcm = new Uint8Array(0);
     this.playing = false;
     this.players.forEach((player) => {
       try {

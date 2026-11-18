@@ -17,7 +17,6 @@ import {
   addPoint,
   answerQuestion,
   averagePace,
-  coachLine,
   currentPace,
   elapsedMs,
   finishSession,
@@ -29,15 +28,14 @@ import {
   pointAlongRoute,
   practicePoint,
   resumeSession,
-  shouldSpeak,
   type Session,
 } from '../lib/engine';
 import { DB_KEY, startBackgroundUpdates, stopBackgroundUpdates } from '../lib/locationTask';
 import { getRunControl, setRunControl } from '../lib/runControl';
 import { useUserLocation } from '../lib/useUserLocation';
 import { usePaceSession } from '../lib/pace/usePaceSession';
+import { workoutNotice } from '../lib/pace/call';
 import { distanceToPathMeters, nextMapCue } from '../lib/pace/mapCues';
-import { speakLine } from '../lib/pace/session';
 import { isRealtimeVoice, voiceTitle } from '../lib/pace/voices';
 import { useTheme } from '../theme/Theme';
 
@@ -58,6 +56,7 @@ export default function LiveRunScreen() {
   const sessionRef = useRef<Session | null>(stored?.session ?? null);
   const pace = usePaceSession({
     enabled: Boolean(stored && session && session.status !== 'finished'),
+    muted: !store.coach.voiceEnabled,
     voice: isRealtimeVoice(store.coach.voiceId) ? store.coach.voiceId : 'marin',
     speed: store.coach.speechSpeed || 1,
     getContext: () => {
@@ -112,42 +111,47 @@ export default function LiveRunScreen() {
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 500);
     const net = NetInfo.addEventListener((state) => setOffline(state.isConnected === false));
-    setAudioModeAsync({ playsInSilentMode: true, interruptionMode: 'duckOthers' }).catch(() => undefined);
+    setAudioModeAsync({
+      playsInSilentMode: true,
+      interruptionMode: 'duckOthers',
+      allowsRecording: true,
+      shouldPlayInBackground: true,
+      allowsBackgroundRecording: true,
+      shouldRouteThroughEarpiece: false,
+    }).catch(() => undefined);
+    const app = AppState.addEventListener('change', (state) => {
+      if (state === 'active') paceRef.current.ensure();
+    });
     return () => {
       clearInterval(timer);
       net();
+      app.remove();
     };
   }, []);
 
   useEffect(() => {
     if (!stored) return;
-    const speak = (text: string, kind: 'start' | 'km' | 'pause' | 'resume' | 'encourage' | 'finish') => {
-      const coach = storeRef.current.coach;
-      if (!coach.voiceEnabled || !shouldSpeak(kind, coach.speak)) return;
-      const voice = isRealtimeVoice(coach.voiceId) ? coach.voiceId : 'marin';
-      void speakLine(text, voice, coach.speechSpeed || 1, coach.coachingTone ?? 'friendly');
-    };
     const ask = (question: string) => {
       const current = sessionRef.current;
       if (!current) return 'Start a run first.';
       const latest = storeRef.current;
+      latest.addMessage('you', question, stored.id);
+      if (paceRef.current.say(question)) return 'On the call.';
       const unit = latest.settings.units;
       const distance = `${formatDistance(current.distanceM, unit)} ${unit}`;
-      const pace = formatPace(currentPace(current, unit) ?? averagePace(current, unit));
+      const paceLabel = formatPace(currentPace(current, unit) ?? averagePace(current, unit));
       const reply = answerQuestion(
         question,
         {
           distance,
-          pace,
+          pace: paceLabel,
           time: formatDuration(activeMs(current, Date.now())),
           goal: stored.goalLabel,
           kmLeft: null,
         },
         latest.coach.personality,
       );
-      latest.addMessage('you', question, stored.id);
       latest.addMessage('coach', reply, stored.id);
-      speak(reply, 'encourage');
       return reply;
     };
     setRunControl({
@@ -155,18 +159,17 @@ export default function LiveRunScreen() {
       pause: () => {
         setSession((current) => {
           if (!current) return current;
-          const next = pauseSession(current, Date.now());
-          speak(coachLine({ kind: 'pause' }, storeRef.current.coach.personality), 'pause');
-          return next;
+          return pauseSession(current, Date.now());
         });
+        paceRef.current.note(workoutNotice('pause', 'The runner paused the workout from the screen.'));
         void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       },
       resume: () => {
         setSession((current) => {
           if (!current) return current;
-          speak(coachLine({ kind: 'resume' }, storeRef.current.coach.personality), 'resume');
           return resumeSession(current, Date.now());
         });
+        paceRef.current.note(workoutNotice('resume', 'The runner resumed the workout.'));
       },
       finish: () => {
         const current = sessionRef.current;
@@ -175,7 +178,6 @@ export default function LiveRunScreen() {
         const finished = finishSession(current, Date.now());
         const summary = finishSummary(finished, latest.settings.units, latest.coach.personality);
         latest.finishRun(stored.id, finished, summary);
-        speak(summary, 'finish');
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         router.replace({ pathname: '/results', params: { id: stored.id } });
       },
@@ -186,15 +188,22 @@ export default function LiveRunScreen() {
 
   const spokenCues = useRef(new Set<string>());
   const lastOffRouteAt = useRef(0);
-  const [mapLine, setMapLine] = useState('');
+  const lastContextAt = useRef(0);
 
   useEffect(() => {
     if (!session || !stored || session.status !== 'running') return;
     const coach = store.coach;
-    if (!coach.voiceEnabled || coach.milestoneAnnouncements === false) return;
+    if (!coach.voiceEnabled) return;
     const point = session.points[session.points.length - 1];
     const offRouteM = stored.planned && point ? distanceToPathMeters(point, stored.planned.coordinates) : null;
     const unit = store.settings.units;
+    const paceLabel = formatPace(currentPace(session, unit) ?? averagePace(session, unit));
+    const nowMs = Date.now();
+    if (nowMs - lastContextAt.current > 45000) {
+      lastContextAt.current = nowMs;
+      paceRef.current.note(workoutNotice('context', `Distance ${formatDistance(session.distanceM, unit)} ${unit}. Pace ${paceLabel}.`));
+    }
+    if (coach.milestoneAnnouncements === false) return;
     const cue = nextMapCue({
       distanceM: session.distanceM,
       status: session.status,
@@ -202,21 +211,19 @@ export default function LiveRunScreen() {
       routeName: stored.planned?.name || stored.goalLabel,
       offRouteM,
       unit,
-      paceLabel: formatPace(currentPace(session, unit) ?? averagePace(session, unit)),
+      paceLabel,
       voiceName: voiceTitle(coach.voiceId),
       tone: coach.coachingTone ?? 'friendly',
       spoken: spokenCues.current,
-      now: Date.now(),
+      now: nowMs,
       lastOffRouteAt: lastOffRouteAt.current,
     });
-    if (!cue) return;
+    if (!cue || cue.kind === 'start') return;
     if (coach.speak === 'quiet' && (cue.kind === 'halfway' || cue.kind === 'offroute')) return;
     spokenCues.current.add(cue.id);
-    if (cue.kind === 'offroute') lastOffRouteAt.current = Date.now();
-    setMapLine(cue.line);
-    store.addMessage('coach', cue.line, stored.id);
-    const voice = isRealtimeVoice(coach.voiceId) ? coach.voiceId : 'marin';
-    void speakLine(cue.line, voice, coach.speechSpeed || 1, coach.coachingTone ?? 'friendly');
+    if (cue.kind === 'offroute') lastOffRouteAt.current = nowMs;
+    const kind = cue.kind === 'km' ? 'km' : cue.kind;
+    paceRef.current.note(workoutNotice(kind, cue.line));
   }, [session, store, stored]);
 
   useEffect(() => {
@@ -319,7 +326,11 @@ export default function LiveRunScreen() {
         return point ? { lon: point.lon, lat: point.lat, label: `${index + 1}` } : null;
       }).filter((item): item is { lon: number; lat: number; label: string } => Boolean(item))
     : [];
-  const coach = store.db.messages.filter((item) => item.runId === stored.id).slice(-1)[0]?.text || 'Keep it up. I am on the route with you.';
+  const thread = store.db.messages.filter((item) => item.runId === stored.id);
+  const lastYou = [...thread].reverse().find((item) => item.role === 'you')?.text;
+  const lastPace = [...thread].reverse().find((item) => item.role === 'coach')?.text;
+  const toneName = store.coach.coachingTone === 'energetic' ? 'Energetic' : store.coach.coachingTone === 'calm' ? 'Calm' : store.coach.coachingTone === 'focused' ? 'Focused' : 'Friendly';
+  const callState = callLabel(pace.status, pace.hearing, !store.coach.voiceEnabled);
   const runner = last ? { lon: last.lon, lat: last.lat } : null;
   const user = session.source === 'gps' ? device ?? runner : runner;
 
@@ -341,8 +352,8 @@ export default function LiveRunScreen() {
             <T weight="bold">{expanded ? 'Close' : 'Back'}</T>
           </Pressable>
           <View style={pill(colors.surface)}>
-            <T weight="bold">{paceLabel(pace.status)}</T>
-            <T size={11} color={colors.muted}>PACE</T>
+            <T weight="bold">{callState}</T>
+            <T size={11} color={colors.muted}>On the call</T>
           </View>
           <Pressable accessibilityRole="button" onPress={() => router.push('/map-options')} style={({ pressed }) => [pill(colors.surface), pressed && { opacity: 0.7 }]}>
             <T weight="semibold">Layers</T>
@@ -358,9 +369,21 @@ export default function LiveRunScreen() {
           ) : null}
         </View>
         {!expanded ? (
-          <View style={{ backgroundColor: colors.surface, borderRadius: 18, padding: 12 }}>
-            <T size={13} weight="semibold">{`${voiceTitle(store.coach.voiceId)} · ${kmCount > 0 ? `${kmCount} ${unit === 'mi' ? 'mi' : 'km'} done` : stored.goalLabel}`}</T>
-            <T color={colors.muted}>{mapLine || coach}</T>
+          <View style={{ backgroundColor: colors.surface, borderRadius: 18, padding: 12, gap: 4 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <T size={13} weight="semibold">PACE is on the call</T>
+              <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 3, height: 14 }}>
+                {[0, 1, 2].map((bar) => (
+                  <View key={bar} style={{ width: 3, height: 6 + bar * 4, borderRadius: 2, backgroundColor: pace.hearing || pace.status === 'speaking' ? colors.lime : colors.faint }} />
+                ))}
+              </View>
+            </View>
+            <T size={12} color={colors.muted}>{store.coach.voiceEnabled ? `${callState} · Mic open` : 'Muted · Mic open'}</T>
+            <T size={11} color={colors.link} weight="semibold">YOU</T>
+            <T size={13}>{lastYou || 'The mic is open. Just talk.'}</T>
+            <T size={11} color={colors.link} weight="semibold">{voiceTitle(store.coach.voiceId).toUpperCase()}</T>
+            <T size={13} color={colors.muted}>{lastPace || 'Saying hello…'}</T>
+            <T size={12} color={colors.muted}>{`${voiceTitle(store.coach.voiceId)} · ${toneName} · ${store.coach.voiceEnabled ? 'Voice active' : 'Muted'}`}</T>
           </View>
         ) : prefs.elevation ? (
           <View style={{ backgroundColor: colors.surface, borderRadius: 18, padding: 12, alignSelf: 'flex-start' }}>
@@ -386,18 +409,21 @@ export default function LiveRunScreen() {
         <View style={{ flexDirection: 'row', gap: 8 }}>
           <Pressable accessibilityRole="button" onPress={() => router.push('/voice-sheet')} style={({ pressed }) => [pill(colors.surface), { flex: 1 }, pressed && { opacity: 0.7 }]}><T weight="semibold">Ask</T></Pressable>
           <Pressable accessibilityRole="button" onPress={() => router.push({ pathname: '/camera', params: { id: stored.id } })} style={({ pressed }) => [pill(colors.surface), { flex: 1 }, pressed && { opacity: 0.7 }]}><T weight="semibold">Note</T></Pressable>
-          <Pressable accessibilityRole="button" onPress={() => store.saveCoach({ voiceEnabled: !store.coach.voiceEnabled })} style={({ pressed }) => [pill(colors.surface), { flex: 1 }, pressed && { opacity: 0.7 }]}><T weight="semibold">{store.coach.voiceEnabled ? 'Mute' : 'Speak'}</T></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel={store.coach.voiceEnabled ? 'Mute companion' : 'Unmute companion'} onPress={() => store.saveCoach({ voiceEnabled: !store.coach.voiceEnabled })} style={({ pressed }) => [pill(store.coach.voiceEnabled ? colors.surface : colors.lime), { flex: 1 }, pressed && { opacity: 0.7 }]}><T weight="semibold" color={store.coach.voiceEnabled ? colors.text : colors.onLime}>{store.coach.voiceEnabled ? 'Mute' : 'Unmute'}</T></Pressable>
         </View>
       </View>
     </View>
   );
 }
 
-function paceLabel(status: 'listening' | 'thinking' | 'speaking' | 'disconnected'): string {
-  if (status === 'listening') return 'Listening';
-  if (status === 'thinking') return 'Thinking';
+function callLabel(status: 'listening' | 'thinking' | 'speaking' | 'reconnecting' | 'disconnected', hearing: boolean, muted: boolean): string {
+  if (muted) return 'Muted';
+  if (hearing) return 'You are talking';
   if (status === 'speaking') return 'Speaking';
-  return 'Voice off';
+  if (status === 'thinking') return 'Thinking';
+  if (status === 'reconnecting') return 'Reconnecting';
+  if (status === 'disconnected') return 'Connecting';
+  return 'Listening';
 }
 
 function pill(background: string) {

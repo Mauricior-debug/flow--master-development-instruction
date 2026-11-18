@@ -50,7 +50,7 @@ export default function VoiceSheet() {
       <T size={28} weight="bold">Voice Coach</T>
       <T color={colors.muted} style={{ marginTop: 6 }}>
         {control
-          ? 'Ask about this run. Typing works even if the microphone has no transcription service.'
+          ? 'The mic is already open on the run. Type here only if you would rather not say it out loud.'
           : 'No run is active. Ask about today’s plan. Answers use your saved plan, not a remote model.'}
       </T>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 16 }}>

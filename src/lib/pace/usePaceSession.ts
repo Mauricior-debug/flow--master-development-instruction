@@ -1,11 +1,13 @@
 import { requestRecordingPermissionsAsync, useAudioStream } from 'expo-audio';
 import { useEffect, useRef, useState } from 'react';
 
+import type { CallTurn, WorkoutNotice } from './call';
 import { PaceVoice, type PaceContext, type PaceStatus } from './session';
 import type { RealtimeVoiceId } from './voices';
 
 type Options = {
   enabled: boolean;
+  muted: boolean;
   voice: RealtimeVoiceId;
   speed: number;
   getContext: () => PaceContext;
@@ -19,9 +21,18 @@ type Options = {
   onSaid: (text: string) => void;
 };
 
-export function usePaceSession(options: Options): { status: PaceStatus; announce: (text: string, important: boolean) => void } {
+export function usePaceSession(options: Options): {
+  status: PaceStatus;
+  hearing: boolean;
+  say: (text: string) => boolean;
+  note: (notice: WorkoutNotice) => void;
+  setMuted: (muted: boolean) => void;
+  ensure: () => void;
+} {
   const [status, setStatus] = useState<PaceStatus>('disconnected');
+  const [hearing, setHearing] = useState(false);
   const voiceRef = useRef<PaceVoice | null>(null);
+  const historyRef = useRef<CallTurn[]>([]);
   const optionsRef = useRef(options);
   optionsRef.current = options;
   const { stream } = useAudioStream({
@@ -36,6 +47,7 @@ export function usePaceSession(options: Options): { status: PaceStatus; announce
 
   useEffect(() => {
     if (!options.enabled) {
+      historyRef.current = voiceRef.current?.historySnapshot() ?? historyRef.current;
       voiceRef.current?.close();
       voiceRef.current = null;
       try {
@@ -44,6 +56,7 @@ export function usePaceSession(options: Options): { status: PaceStatus; announce
         // The microphone may already be stopped.
       }
       setStatus('disconnected');
+      setHearing(false);
       return undefined;
     }
     let alive = true;
@@ -51,6 +64,9 @@ export function usePaceSession(options: Options): { status: PaceStatus; announce
       getContext: () => optionsRef.current.getContext(),
       onStatus: (next) => {
         if (alive) setStatus(next);
+      },
+      onHearing: (next) => {
+        if (alive) setHearing(next);
       },
       onPause: () => optionsRef.current.onPause(),
       onResume: () => optionsRef.current.onResume(),
@@ -61,6 +77,8 @@ export function usePaceSession(options: Options): { status: PaceStatus; announce
       onHeard: (text) => optionsRef.current.onHeard(text),
       onSaid: (text) => optionsRef.current.onSaid(text),
     });
+    session.restore(historyRef.current);
+    session.setMuted(options.muted);
     voiceRef.current = session;
     void (async () => {
       try {
@@ -73,11 +91,12 @@ export function usePaceSession(options: Options): { status: PaceStatus; announce
         if (!alive) return;
         await stream.start();
       } catch {
-        if (alive) setStatus('disconnected');
+        if (alive) setStatus('reconnecting');
       }
     })();
     return () => {
       alive = false;
+      historyRef.current = session.historySnapshot();
       session.close();
       try {
         stream.stop();
@@ -87,8 +106,16 @@ export function usePaceSession(options: Options): { status: PaceStatus; announce
     };
   }, [options.enabled, options.speed, options.voice, stream]);
 
+  useEffect(() => {
+    voiceRef.current?.setMuted(options.muted);
+  }, [options.muted]);
+
   return {
     status,
-    announce: (text, important) => voiceRef.current?.announce(text, important),
+    hearing,
+    say: (text) => voiceRef.current?.say(text) ?? false,
+    note: (notice) => voiceRef.current?.note(notice),
+    setMuted: (muted) => voiceRef.current?.setMuted(muted),
+    ensure: () => voiceRef.current?.ensure(),
   };
 }
