@@ -52,7 +52,14 @@ const config: ExpoConfig = {
     'expo-font',
     'expo-secure-store',
     'expo-asset',
-    'expo-audio',
+    [
+      'expo-audio',
+      {
+        enableBackgroundPlayback: true,
+        enableBackgroundRecording: true,
+        microphonePermission: 'PACE AI uses the microphone when you talk to your coach during a run.',
+      },
+    ],
     'expo-sharing',
     [
       'expo-location',

@@ -7,6 +7,7 @@ import { base64ToBytes, bytesToBase64, pcm16ToWav, resampleInt16 } from './audio
 import { interpretSpeech, type PaceAction } from './commands';
 import { mintRealtimeSecret, readOpenAIKey, REALTIME_MODEL } from './openai';
 import { CALL_VAD, callInstructions, greetingText, rememberTurn, resumeText, textItem, truncateEvent, type CallTurn, type WorkoutNotice } from './call';
+import { pocketRecording } from '../pocketFlag';
 import { concatBytes, FIRST_PCM_BYTES, NEXT_PCM_BYTES, pullPcm, speechBody, spokenSpeed, type SpeechTone } from './speech';
 import { PREVIEW_LINE, voiceTitle, type RealtimeVoiceId } from './voices';
 
@@ -727,8 +728,9 @@ async function prepareSpeaker(): Promise<void> {
   await setAudioModeAsync({
     playsInSilentMode: true,
     interruptionMode: 'doNotMix',
-    allowsRecording: false,
-    shouldPlayInBackground: false,
+    allowsRecording: pocketRecording(),
+    shouldPlayInBackground: true,
+    allowsBackgroundRecording: pocketRecording(),
     shouldRouteThroughEarpiece: false,
   });
 }

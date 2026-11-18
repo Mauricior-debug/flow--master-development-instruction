@@ -84,6 +84,9 @@ export type Settings = {
   cameraAllowed?: boolean;
   microphoneAllowed?: boolean;
   photosAllowed?: boolean;
+  backgroundAudio?: boolean;
+  lockRun?: boolean;
+  headphoneControls?: boolean;
 };
 
 export type CoachProfile = {

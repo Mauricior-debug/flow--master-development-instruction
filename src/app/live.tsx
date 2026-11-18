@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AppState, Pressable, View } from 'react-native';
 
 import { PaceMap } from '../components/PaceMap';
+import { RunLock } from '../components/RunLock';
 import { useMapPrefs } from '../lib/mapPrefs';
 import { BrandHeader, Screen, T } from '../components/ui';
 import { useStore } from '../data/store';
@@ -33,6 +34,7 @@ import {
   type Session,
 } from '../lib/engine';
 import { DB_KEY, startBackgroundUpdates, stopBackgroundUpdates } from '../lib/locationTask';
+import { startPocket, stopPocket, syncPocket } from '../lib/pocket';
 import { getRunControl, setRunControl } from '../lib/runControl';
 import { useUserLocation } from '../lib/useUserLocation';
 import { usePaceSession } from '../lib/pace/usePaceSession';
@@ -182,6 +184,7 @@ export default function LiveRunScreen() {
         });
         if (storeRef.current.coach.liveTalk) paceRef.current.note(workoutNotice('pause', 'The runner paused the workout from the screen.'));
         else sayUpdate(coachLine({ kind: 'pause' }, storeRef.current.coach.personality), 'pause');
+        void syncPocket();
         void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       },
       resume: () => {
@@ -191,6 +194,7 @@ export default function LiveRunScreen() {
         });
         if (storeRef.current.coach.liveTalk) paceRef.current.note(workoutNotice('resume', 'The runner resumed the workout.'));
         else sayUpdate(coachLine({ kind: 'resume' }, storeRef.current.coach.personality), 'resume');
+        void syncPocket();
       },
       finish: () => {
         const current = sessionRef.current;
@@ -275,8 +279,41 @@ export default function LiveRunScreen() {
   }, [stored?.id, stored?.session.source]);
 
   useEffect(() => {
+    if (!stored || !session || session.status === 'finished') return undefined;
+    const controls = store.settings.headphoneControls !== false;
+    const notify = store.settings.backgroundAudio !== false;
+    if (!controls && !notify) {
+      void stopPocket();
+      return undefined;
+    }
+    void startPocket(() => {
+      const current = sessionRef.current;
+      const latest = storeRef.current;
+      const unit = latest.settings.units;
+      const coach = latest.coach;
+      const distance = current ? `${formatDistance(current.distanceM, unit)} ${unit}` : `0 ${unit}`;
+      const paceValue = current ? formatPace(currentPace(current, unit) ?? averagePace(current, unit)) : '—';
+      const mode = coach.liveTalk ? 'Live' : 'Coach';
+      return {
+        time: current ? formatDuration(activeMs(current, Date.now())) : '00:00',
+        distance,
+        pace: `${paceValue} /${unit}`,
+        companion: `${voiceTitle(coach.voiceId)} · ${mode}${coach.voiceEnabled ? '' : ' · quiet'}`,
+        paused: current?.status === 'paused',
+        status: current?.status ?? 'running',
+      };
+    }, { controls, notify });
+    return () => {
+      void stopPocket();
+    };
+  }, [session?.status, stored?.id, store.settings.backgroundAudio, store.settings.headphoneControls]);
+
+  useEffect(() => {
     if (!stored || stored.session.source !== 'gps') return;
     let alive = true;
+    void startBackgroundUpdates().then((on) => {
+      if (alive) setBackgroundOn(on);
+    });
     async function watchForeground() {
       try {
         watch.current?.remove();
@@ -455,6 +492,16 @@ export default function LiveRunScreen() {
           <Pressable accessibilityRole="button" accessibilityLabel={store.coach.voiceEnabled ? 'Mute companion' : 'Unmute companion'} onPress={() => store.saveCoach({ voiceEnabled: !store.coach.voiceEnabled })} style={({ pressed }) => [pill(store.coach.voiceEnabled ? colors.surface : colors.lime), { flex: 1 }, pressed && { opacity: 0.7 }]}><T weight="semibold" color={store.coach.voiceEnabled ? colors.text : colors.onLime}>{store.coach.voiceEnabled ? 'Mute' : 'Unmute'}</T></Pressable>
         </View>
       </View>
+      {store.settings.lockRun ? (
+        <RunLock
+          time={formatDuration(activeMs(session, now))}
+          distance={`${formatDistance(session.distanceM, unit)} ${unit}`}
+          pace={`${formatPace(currentPace(session, unit) ?? averagePace(session, unit))} /${unit}`}
+          companion={liveTalk ? `${callState} · ${voiceTitle(store.coach.voiceId)}` : `${voiceTitle(store.coach.voiceId)} · Coach updates`}
+          onUnlock={() => store.updateSettings({ lockRun: false })}
+          onPause={() => getRunControl()?.pause()}
+        />
+      ) : null}
     </View>
   );
 }

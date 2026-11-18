@@ -99,6 +99,9 @@ function defaultSettings(userId: string): Settings {
     cameraAllowed: false,
     microphoneAllowed: false,
     photosAllowed: false,
+    backgroundAudio: true,
+    lockRun: false,
+    headphoneControls: true,
   };
 }
 

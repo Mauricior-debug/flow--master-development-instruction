@@ -45,6 +45,34 @@ export default function SettingsScreen() {
         </Card>
         <Card>
           <ToggleRow
+            icon="volume-high-outline"
+            title="Background audio"
+            detail="The voice can keep going after the screen locks"
+            value={store.settings.backgroundAudio !== false}
+            onValueChange={(value) => store.updateSettings({ backgroundAudio: value })}
+          />
+        </Card>
+        <Card>
+          <ToggleRow
+            icon="lock-closed-outline"
+            title="Lock screen for run"
+            detail="Block accidental taps during a run"
+            value={store.settings.lockRun === true}
+            onValueChange={(value) => store.updateSettings({ lockRun: value })}
+          />
+        </Card>
+        <Card>
+          <ToggleRow
+            icon="headset-outline"
+            title="Headphone controls"
+            detail="Pause and resume from the lock screen"
+            value={store.settings.headphoneControls !== false}
+            onValueChange={(value) => store.updateSettings({ headphoneControls: value })}
+          />
+        </Card>
+        <LinkRow icon="mic-outline" title="Voice and personality" detail="The saved voice, tone, and how often they speak" onPress={() => router.push('/companion/voice')} />
+        <Card>
+          <ToggleRow
             icon="speedometer-outline"
             title="Kilometres"
             detail={store.settings.units === 'km' ? 'Distances show in kilometres' : 'Distances show in miles'}
