@@ -85,7 +85,8 @@ export function Screen({
   const insets = useSafeAreaInsets();
   const ref = useRef<ScrollView | null>(null);
   useScrollToTop(ref as never);
-  const bottom = tab ? 28 : insets.bottom + 16;
+  // Native tabs float over the screen. The home-indicator inset does not include that bar.
+  const bottom = tab ? insets.bottom + 108 : insets.bottom + 16;
   if (!scroll) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: insets.top + 8, paddingBottom: bottom }}>
@@ -98,7 +99,9 @@ export function Screen({
       <ScrollView
         ref={ref as never}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingTop: insets.top + 8, paddingBottom: bottom + 24, paddingHorizontal: space.lg }}
+        contentInsetAdjustmentBehavior="never"
+        scrollIndicatorInsets={{ bottom }}
+        contentContainerStyle={{ paddingTop: insets.top + 8, paddingBottom: bottom + 28, paddingHorizontal: space.lg }}
       >
         {children}
       </ScrollView>

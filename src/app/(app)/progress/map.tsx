@@ -31,7 +31,7 @@ export default function RunningMapScreen() {
   const moving = runs.reduce((sum, run) => sum + run.session.movingMs, 0);
 
   return (
-    <Screen tab={false}>
+    <Screen tab>
       <BrandHeader back />
       <T size={32} weight="bold">My Running Map</T>
       <View style={{ flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 999, padding: 4, marginVertical: 14 }}>
