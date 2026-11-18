@@ -38,7 +38,11 @@ export default function ResultsScreen() {
       <T size={34} weight="bold">Run Complete</T>
       <T color={colors.muted} style={{ marginTop: 6 }}>{run.summary || 'The route is saved on this phone.'}</T>
       <View style={{ height: 240, borderRadius: 22, overflow: 'hidden', marginTop: 16 }}>
-        <PaceMap prefs={prefs} tracks={track.length > 1 ? [{ id: 'replay', coordinates: track, color: '#B6FF00', width: 5 }] : run.planned ? [{ id: 'planned', coordinates: run.planned.coordinates }] : []} />
+        <PaceMap
+          prefs={prefs}
+          user={run.session.points.length ? { lon: run.session.points[run.session.points.length - 1].lon, lat: run.session.points[run.session.points.length - 1].lat } : null}
+          tracks={track.length > 1 ? [{ id: 'replay', coordinates: track, color: '#B6FF00', width: 5 }] : run.planned ? [{ id: 'planned', coordinates: run.planned.coordinates }] : []}
+        />
       </View>
       <View style={{ flexDirection: 'row', gap: 8, marginTop: 18 }}>
         <Card style={{ flex: 1 }}>

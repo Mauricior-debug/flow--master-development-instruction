@@ -34,6 +34,7 @@ import {
 } from '../lib/engine';
 import { DB_KEY, startBackgroundUpdates, stopBackgroundUpdates } from '../lib/locationTask';
 import { setRunControl } from '../lib/runControl';
+import { useUserLocation } from '../lib/useUserLocation';
 import { useTheme } from '../theme/Theme';
 
 export default function LiveRunScreen() {
@@ -43,6 +44,7 @@ export default function LiveRunScreen() {
   const colors = useTheme();
   const prefs = useMapPrefs();
   const [expanded, setExpanded] = useState(false);
+  const device = useUserLocation();
   const stored = store.db.runs.find((item) => item.id === id);
   const [session, setSession] = useState<Session | null>(stored?.session ?? null);
   const [now, setNow] = useState(Date.now());
@@ -253,7 +255,8 @@ export default function LiveRunScreen() {
       }).filter((item): item is { lon: number; lat: number; label: string } => Boolean(item))
     : [];
   const coach = store.db.messages.filter((item) => item.runId === stored.id).slice(-1)[0]?.text || 'Keep it up. I am on the route with you.';
-  const user = last ? { lon: last.lon, lat: last.lat } : planned[0] ? { lon: planned[0][0], lat: planned[0][1] } : null;
+  const runner = last ? { lon: last.lon, lat: last.lat } : null;
+  const user = session.source === 'gps' ? device ?? runner : runner;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -267,7 +270,7 @@ export default function LiveRunScreen() {
           ...(track.length > 1 ? [{ id: 'track', coordinates: track, color: '#B6FF00', width: 5, opacity: 1 }] : []),
         ]}
       />
-      <View style={{ position: 'absolute', top: 54, left: 16, right: 16, gap: 10 }} pointerEvents="box-none">
+      <View style={{ position: 'absolute', top: 54, left: 16, right: 16, gap: 8 }} pointerEvents="box-none">
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <Pressable accessibilityRole="button" accessibilityLabel="Close map" onPress={() => (expanded ? setExpanded(false) : router.back())} style={({ pressed }) => [pill(colors.surface), pressed && { opacity: 0.7 }]}>
             <T weight="bold">{expanded ? 'Close' : 'Back'}</T>
@@ -297,7 +300,7 @@ export default function LiveRunScreen() {
           </View>
         ) : null}
       </View>
-      <View style={{ position: 'absolute', left: 16, right: 16, bottom: 28, gap: 10 }}>
+      <View style={{ position: 'absolute', left: 16, right: 16, bottom: 24, gap: 8 }} pointerEvents="box-none">
         {offline ? <T size={12} color={colors.text}>No network. The run is still recording on this phone.</T> : null}
         {weak || gpsNote ? <T size={12} color={colors.text}>{gpsNote || 'GPS is weak. Distance stays at the last good point.'}</T> : null}
         {session.source === 'practice' ? <T size={12} color={colors.text}>{stored.planned ? 'Following the saved route without GPS.' : 'Practice route. These points are not your real location.'}</T> : null}

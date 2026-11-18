@@ -32,7 +32,11 @@ export default function RunDetailScreen() {
       <T size={32} weight="bold">{run.goalLabel}</T>
       <T color={colors.muted} style={{ marginTop: 4 }}>{run.session.source === 'practice' ? 'Practice route' : 'GPS route'}</T>
       <View style={{ height: 240, borderRadius: 18, overflow: 'hidden', marginTop: 16 }}>
-        <PaceMap prefs={prefs} tracks={[{ id: 'detail', coordinates: track.length > 1 ? track : run.planned?.coordinates ?? [], color: '#B6FF00', width: 5 }]} />
+        <PaceMap
+          prefs={prefs}
+          user={run.session.points.length ? { lon: run.session.points[run.session.points.length - 1].lon, lat: run.session.points[run.session.points.length - 1].lat } : null}
+          tracks={[{ id: 'detail', coordinates: track.length > 1 ? track : run.planned?.coordinates ?? [], color: '#B6FF00', width: 5 }]}
+        />
       </View>
       <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
         <Card style={{ flex: 1 }}><T size={12} color={colors.muted}>Distance</T><T weight="bold">{`${formatDistance(run.session.distanceM, unit)} ${unit}`}</T></Card>

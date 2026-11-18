@@ -6,6 +6,7 @@ import { BrandHeader, Card, EmptyState, Screen, T } from '../../../components/ui
 import { useAuthGuard } from '../../../components/ui';
 import { formatDistance } from '../../../lib/engine';
 import { useMapPrefs } from '../../../lib/mapPrefs';
+import { useUserLocation } from '../../../lib/useUserLocation';
 import { useTheme } from '../../../theme/Theme';
 import { useRouter } from 'expo-router';
 
@@ -14,6 +15,7 @@ export default function RunningMapScreen() {
   const router = useRouter();
   const colors = useTheme();
   const prefs = useMapPrefs();
+  const you = useUserLocation();
   const [tab, setTab] = useState<'routes' | 'heatmap' | 'history'>('routes');
   const unit = store.settings.units;
   const runs = store.user ? store.db.runs.filter((item) => item.userId === store.user?.id && item.session.status === 'finished' && item.session.points.length > 1) : [];
@@ -52,7 +54,7 @@ export default function RunningMapScreen() {
         ))
       ) : (
         <View style={{ height: 420, borderRadius: 22, overflow: 'hidden' }}>
-          <PaceMap prefs={{ ...prefs, route: true }} tracks={tracks} />
+          <PaceMap prefs={{ ...prefs, route: true }} tracks={tracks} user={you} />
         </View>
       )}
       <View style={{ flexDirection: 'row', gap: 8, marginTop: 16 }}>

@@ -9,6 +9,7 @@ import { useStore } from '../../../../data/store';
 import { formatDistance, formatDuration } from '../../../../lib/engine';
 import { recallRoute } from '../../../../lib/mapbox';
 import { useMapPrefs } from '../../../../lib/mapPrefs';
+import { useUserLocation } from '../../../../lib/useUserLocation';
 import { useTheme } from '../../../../theme/Theme';
 
 export default function RouteDetailScreen() {
@@ -17,6 +18,7 @@ export default function RouteDetailScreen() {
   const router = useRouter();
   const colors = useTheme();
   const prefs = useMapPrefs();
+  const you = useUserLocation();
   const route = id ? recallRoute(id) : undefined;
   const unit = store.settings.units;
 
@@ -54,6 +56,7 @@ export default function RouteDetailScreen() {
       <View style={{ height: 280, borderRadius: 22, overflow: 'hidden', marginBottom: 16 }}>
         <PaceMap
           prefs={prefs}
+          user={you}
           tracks={[{ id: 'planned', coordinates: route.coordinates, color: '#B6FF00', width: 6 }]}
         />
       </View>

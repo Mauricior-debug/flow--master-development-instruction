@@ -6,11 +6,13 @@ import { useEffect, useState } from 'react';
 import { Image } from 'expo-image';
 import { Pressable, TextInput, View } from 'react-native';
 
+import { PaceMap } from '../../../components/PaceMap';
 import { BrandHeader, EmptyState, LoadingBlock, Screen, T } from '../../../components/ui';
 import { useAuthGuard } from '../../../components/ui';
 import { formatDistance } from '../../../lib/engine';
 import { discoverRoutes, recallRoute, rememberRoute, searchPlaces, staticRouteImage, type MapCenter, type MapRoute, type RouteCategory } from '../../../lib/mapbox';
 import { useMapPrefs } from '../../../lib/mapPrefs';
+import { useUserLocation } from '../../../lib/useUserLocation';
 import { font } from '../../../theme/tokens';
 import { useTheme } from '../../../theme/Theme';
 
@@ -27,6 +29,7 @@ export default function ExploreRoutesScreen() {
   const router = useRouter();
   const colors = useTheme();
   const prefs = useMapPrefs();
+  const device = useUserLocation();
   const [query, setQuery] = useState('');
   const [center, setCenter] = useState<MapCenter | null>(null);
   const [chip, setChip] = useState<RouteCategory>('nearby');
@@ -154,6 +157,13 @@ export default function ExploreRoutesScreen() {
             </Pressable>
           );
         })}
+      </View>
+      <View style={{ height: 240, borderRadius: 22, overflow: 'hidden', marginTop: 14 }}>
+        <PaceMap
+          prefs={prefs}
+          user={device ?? (center?.label === 'Your location' ? { lon: center.lon, lat: center.lat } : null)}
+          tracks={routes.map((route) => ({ id: route.id, coordinates: route.coordinates, color: '#B6FF00', width: 4 }))}
+        />
       </View>
       {error ? <T color={colors.muted} style={{ marginTop: 12 }}>{error}</T> : null}
       {loading ? <LoadingBlock label="Drawing routes from the map" /> : null}
