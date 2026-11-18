@@ -12,6 +12,7 @@ import {
   earnedAchievementKeys,
   finishSession,
   formatPace,
+  pointAlongRoute,
   pauseSession,
   practicePoint,
   resumeSession,
@@ -93,6 +94,13 @@ test('plan includes rest and does not jump wildly', () => {
     if (weeks[index - 1] === 0) continue;
     assert.ok(weeks[index] <= weeks[index - 1] * 1.2 + 0.2);
   }
+});
+
+test('a point follows a route by distance', () => {
+  const point = pointAlongRoute([[0, 0], [0, 0.01]], 200, 5_000);
+  assert.ok(point);
+  assert.equal(point?.t, 5_000);
+  assert.ok((point?.lat ?? 0) > 0 && (point?.lat ?? 0) < 0.01);
 });
 
 test('achievements follow the rules', () => {

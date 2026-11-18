@@ -9,6 +9,7 @@ import { BrandHeader, Card, EmptyState, LoadingBlock, PrimaryButton, Screen, T }
 import { useStore } from '../../../data/store';
 import { currentStreak, dueToday, greeting, habitIconName, nameFromEmail, todayKey } from '../../../lib/engine';
 import { weekScore } from '../../../lib/stats';
+import { voiceTitle } from '../../../lib/pace/voices';
 import { useTheme } from '../../../theme/Theme';
 
 const avatar = require('../../../../assets/images/avatar-profile.jpg');
@@ -62,6 +63,13 @@ export default function HomeScreen() {
         </View>
         <Ring progress={ratio} label={`${Math.round(ratio * 100)}%`} />
       </Card>
+      <Pressable accessibilityRole="button" onPress={() => router.push('/companion/studio')} style={({ pressed }) => [{ marginTop: 12, opacity: pressed ? 0.85 : 1 }]}>
+        <Card>
+          <T size={13} color={colors.link} weight="semibold">YOUR PACE COMPANION</T>
+          <T weight="bold" style={{ marginTop: 4 }}>{`Voice: ${voiceTitle(store.coach.voiceId)} · ${store.coach.coachingTone ?? 'Friendly'} · ${store.coach.speak}`}</T>
+          <T color={colors.muted}>Ready for your next run</T>
+        </Card>
+      </Pressable>
       {active ? (
         <Pressable accessibilityRole="button" onPress={() => router.push({ pathname: '/live', params: { id: active.id } })} style={({ pressed }) => [{ marginTop: 12, opacity: pressed ? 0.8 : 1 }]}>
           <Card style={{ borderColor: colors.lime }}>

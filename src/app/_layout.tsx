@@ -10,6 +10,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ThemeBridge } from '../components/providers';
 import { StoreProvider } from '../data/store';
+import { loadMapPrefs } from '../lib/mapPrefs';
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -22,6 +23,7 @@ export default function RootLayout() {
   });
 
   useEffect(() => {
+    void loadMapPrefs();
     if (loaded) SplashScreen.hideAsync().catch(() => undefined);
   }, [loaded]);
 
@@ -46,6 +48,14 @@ export default function RootLayout() {
               <Stack.Screen
                 name="controls-sheet"
                 options={{ presentation: 'formSheet', sheetAllowedDetents: [0.4, 0.72], sheetGrabberVisible: true }}
+              />
+              <Stack.Screen
+                name="map-options"
+                options={{ presentation: 'formSheet', sheetAllowedDetents: [0.58, 0.9], sheetGrabberVisible: true }}
+              />
+              <Stack.Screen
+                name="safety-sheet"
+                options={{ presentation: 'formSheet', sheetAllowedDetents: [0.46, 0.8], sheetGrabberVisible: true }}
               />
             </Stack>
           </ThemeBridge>

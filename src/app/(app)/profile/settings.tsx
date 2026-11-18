@@ -4,6 +4,7 @@ import { View } from 'react-native';
 import { BrandHeader, Card, LinkRow, Screen, T, ToggleRow } from '../../../components/ui';
 import { useAuthGuard } from '../../../components/ui';
 import { askConfirm } from '../../../lib/confirm';
+import { requestPermission } from '../../../lib/permissions';
 import { useTheme } from '../../../theme/Theme';
 
 export default function SettingsScreen() {
@@ -22,7 +23,15 @@ export default function SettingsScreen() {
             title="Notifications"
             detail="Push reminders and alerts"
             value={store.settings.notificationsEnabled}
-            onValueChange={(value) => store.updateSettings({ notificationsEnabled: value })}
+            onValueChange={(value) => {
+              if (!value) {
+                store.updateSettings({ notificationsEnabled: false });
+                return;
+              }
+              void requestPermission('notifications').then((result) => {
+                store.updateSettings({ notificationsEnabled: result.granted });
+              });
+            }}
           />
         </Card>
         <Card>
@@ -34,6 +43,34 @@ export default function SettingsScreen() {
             onValueChange={(value) => store.updateSettings({ theme: value ? 'dark' : 'light' })}
           />
         </Card>
+        <Card>
+          <ToggleRow
+            icon="volume-high-outline"
+            title="Background audio"
+            detail="The voice can keep going after the screen locks"
+            value={store.settings.backgroundAudio !== false}
+            onValueChange={(value) => store.updateSettings({ backgroundAudio: value })}
+          />
+        </Card>
+        <Card>
+          <ToggleRow
+            icon="lock-closed-outline"
+            title="Lock screen for run"
+            detail="Block accidental taps during a run"
+            value={store.settings.lockRun === true}
+            onValueChange={(value) => store.updateSettings({ lockRun: value })}
+          />
+        </Card>
+        <Card>
+          <ToggleRow
+            icon="headset-outline"
+            title="Headphone controls"
+            detail="Pause and resume from the lock screen"
+            value={store.settings.headphoneControls !== false}
+            onValueChange={(value) => store.updateSettings({ headphoneControls: value })}
+          />
+        </Card>
+        <LinkRow icon="mic-outline" title="Voice and personality" detail="The saved voice, tone, and how often they speak" onPress={() => router.push('/companion/voice')} />
         <Card>
           <ToggleRow
             icon="speedometer-outline"

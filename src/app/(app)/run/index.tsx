@@ -48,8 +48,10 @@ export default function RunSetupScreen() {
   return (
     <Screen tab>
       <BrandHeader />
-      <T size={32} weight="bold">Run Setup</T>
-      <T color={colors.muted} style={{ marginTop: 6, marginBottom: 16 }}>GPS tracking stays on even if the coach goes quiet.</T>
+      <T size={32} weight="bold">Run</T>
+      <T color={colors.muted} style={{ marginTop: 6, marginBottom: 16 }}>Find a route on the map, or start from here.</T>
+      <PrimaryButton label="Explore Routes" onPress={() => router.push('/run/explore')} />
+      <View style={{ height: 16 }} />
       {active ? (
         <Card style={{ marginBottom: 12, borderColor: colors.lime }}>
           <T weight="bold">A run is already open</T>

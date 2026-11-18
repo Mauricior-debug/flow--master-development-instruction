@@ -1,13 +1,15 @@
 import { useRouter } from 'expo-router';
 import { View } from 'react-native';
 
-import { PrimaryButton, SecondaryButton, T } from '../components/ui';
+import { PrimaryButton, SecondaryButton, T, ToggleRow } from '../components/ui';
+import { useStore } from '../data/store';
 import { getRunControl } from '../lib/runControl';
 import { useTheme } from '../theme/Theme';
 
 export default function ControlsSheet() {
   const router = useRouter();
   const colors = useTheme();
+  const store = useStore();
   const control = getRunControl();
   const paused = control?.getSession().status === 'paused';
   return (
@@ -31,6 +33,34 @@ export default function ControlsSheet() {
               control.finish();
               router.back();
             }}
+          />
+          <ToggleRow
+            icon="lock-closed-outline"
+            title="Lock screen for run"
+            detail="Blocks accidental taps. It does not stop the phone’s own lock button."
+            value={store.settings.lockRun === true}
+            onValueChange={(value) => store.updateSettings({ lockRun: value })}
+          />
+          <ToggleRow
+            icon="headset-outline"
+            title="Live conversation"
+            detail="Coach updates stay on until this is on."
+            value={store.coach.liveTalk === true}
+            onValueChange={(value) => store.saveCoach({ liveTalk: value, voiceEnabled: value ? true : store.coach.voiceEnabled })}
+          />
+          <ToggleRow
+            icon="musical-notes-outline"
+            title="Background audio"
+            detail="Keep the voice going with the screen locked."
+            value={store.settings.backgroundAudio !== false}
+            onValueChange={(value) => store.updateSettings({ backgroundAudio: value })}
+          />
+          <ToggleRow
+            icon="play-outline"
+            title="Headphone controls"
+            detail="Pause and resume from the lock screen. Skip is hidden."
+            value={store.settings.headphoneControls !== false}
+            onValueChange={(value) => store.updateSettings({ headphoneControls: value })}
           />
         </>
       ) : (

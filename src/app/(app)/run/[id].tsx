@@ -2,17 +2,18 @@ import { useLocalSearchParams } from 'expo-router';
 import { View } from 'react-native';
 import { Image } from 'expo-image';
 
-import { RouteLine } from '../../../components/charts';
+import { PaceMap } from '../../../components/PaceMap';
 import { BrandHeader, Card, Screen, T } from '../../../components/ui';
 import { useAuthGuard } from '../../../components/ui';
 import { averagePace, formatDistance, formatDuration, formatPace } from '../../../lib/engine';
-import { mapPreviewUrl } from '../../../lib/map';
+import { useMapPrefs } from '../../../lib/mapPrefs';
 import { useTheme } from '../../../theme/Theme';
 
 export default function RunDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const store = useAuthGuard();
   const colors = useTheme();
+  const prefs = useMapPrefs();
   const run = store.db.runs.find((item) => item.id === id);
   if (!run) {
     return (
@@ -24,14 +25,18 @@ export default function RunDetailScreen() {
   }
   const unit = store.settings.units;
   const splits = unit === 'mi' ? run.session.splitsMi : run.session.splitsKm;
-  const map = mapPreviewUrl(run.session.points);
+  const track = run.session.points.map((point) => [point.lon, point.lat] as [number, number]);
   return (
     <Screen tab>
       <BrandHeader back />
       <T size={32} weight="bold">{run.goalLabel}</T>
       <T color={colors.muted} style={{ marginTop: 4 }}>{run.session.source === 'practice' ? 'Practice route' : 'GPS route'}</T>
-      <View style={{ marginTop: 16 }}>
-        {map ? <Image source={{ uri: map }} style={{ height: 200, borderRadius: 18 }} contentFit="cover" accessibilityLabel="Saved route map" /> : <RouteLine points={run.session.points} height={200} />}
+      <View style={{ height: 240, borderRadius: 18, overflow: 'hidden', marginTop: 16 }}>
+        <PaceMap
+          prefs={prefs}
+          user={run.session.points.length ? { lon: run.session.points[run.session.points.length - 1].lon, lat: run.session.points[run.session.points.length - 1].lat } : null}
+          tracks={[{ id: 'detail', coordinates: track.length > 1 ? track : run.planned?.coordinates ?? [], color: '#B6FF00', width: 5 }]}
+        />
       </View>
       <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
         <Card style={{ flex: 1 }}><T size={12} color={colors.muted}>Distance</T><T weight="bold">{`${formatDistance(run.session.distanceM, unit)} ${unit}`}</T></Card>
