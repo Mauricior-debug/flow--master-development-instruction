@@ -17,7 +17,7 @@ export default function ExportScreen() {
       <BrandHeader back />
       <T size={32} weight="bold">Export data</T>
       <T color={colors.muted} style={{ marginTop: 6, marginBottom: 16 }}>
-        Habits, check-ins, runs, and messages. Password hashes are left out.
+        Runs, your plan, and messages. Password hashes are left out.
       </T>
       <Card>
         <T size={13} color={colors.muted}>{`${json.length} characters ready`}</T>

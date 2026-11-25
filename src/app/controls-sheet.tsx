@@ -28,8 +28,8 @@ export default function ControlsSheet() {
           <SecondaryButton
             label="Finish and save"
             onPress={() => {
-              control.finish();
               router.back();
+              setTimeout(() => control.finish(), 280);
             }}
           />
         </>

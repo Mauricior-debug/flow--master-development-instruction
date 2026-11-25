@@ -25,7 +25,7 @@ export default function SignUpScreen() {
         Create Your Account
       </T>
       <T color={colors.muted} style={{ marginTop: 6, marginBottom: 22 }}>
-        Start building a better you today.
+        A coach for the runs you are about to do.
       </T>
       <View style={{ gap: 12 }}>
         <Field icon="mail-outline" value={email} onChangeText={setEmail} placeholder="you@example.com" keyboard="email-address" />
@@ -44,7 +44,7 @@ export default function SignUpScreen() {
                 setError(result.error);
                 return;
               }
-              router.replace('/habit-setup');
+              router.replace('/setup/goals');
             });
           }}
         />

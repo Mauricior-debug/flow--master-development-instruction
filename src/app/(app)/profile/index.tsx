@@ -7,7 +7,7 @@ import { useAuthGuard } from '../../../components/ui';
 import { nameFromEmail } from '../../../lib/engine';
 import { useTheme } from '../../../theme/Theme';
 
-const avatar = require('../../../../assets/images/avatar-profile.jpg');
+const avatar = require('../../../../assets/images/avatar-profile.png');
 
 export default function ProfileScreen() {
   const store = useAuthGuard();

@@ -30,7 +30,7 @@ export default function NotificationsScreen() {
       />
       <T size={32} weight="bold" style={{ marginBottom: 12 }}>Notifications</T>
       {notices.length === 0 ? (
-        <EmptyState title="You’re up to date" detail="Reminders, streaks, and saved runs will show up here." />
+        <EmptyState title="You’re up to date" detail="Saved runs and coach notes will show up here." />
       ) : (
         notices.map((notice) => (
           <Pressable key={notice.id} accessibilityRole="button" accessibilityLabel={notice.title} onPress={() => store.markNotice(notice.id)} style={({ pressed }) => [{ marginBottom: 10, opacity: pressed ? 0.8 : 1 }]}>

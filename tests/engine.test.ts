@@ -3,6 +3,7 @@ import { test } from 'node:test';
 
 import {
   addPoint,
+  answerQuestion,
   asText,
   awardXp,
   bestStreak,
@@ -15,8 +16,10 @@ import {
   pauseSession,
   practicePoint,
   resumeSession,
+  runTotals,
   startSession,
   weeklyRunKm,
+  type StoredRun,
 } from '../src/lib/engine.ts';
 
 test('distance between nearby points is a few metres', () => {
@@ -93,6 +96,38 @@ test('plan includes rest and does not jump wildly', () => {
     if (weeks[index - 1] === 0) continue;
     assert.ok(weeks[index] <= weeks[index - 1] * 1.2 + 0.2);
   }
+});
+
+test('pain cues tell the runner to stop', () => {
+  const reply = answerQuestion('my chest hurts', { distance: '2.00 km', pace: '6:00 /km', time: '12:00', goal: '5k', kmLeft: null }, 'calm');
+  assert.match(reply, /Stop and walk/);
+});
+
+test('week totals count only finished runs', () => {
+  const now = new Date(2026, 2, 4, 12);
+  const finished: StoredRun = {
+    id: 'run',
+    userId: 'user',
+    goalLabel: 'Easy',
+    summary: '',
+    session: {
+      status: 'finished',
+      source: 'gps',
+      startedAt: now.getTime() - 1000,
+      finishedAt: now.getTime(),
+      points: [],
+      movingMs: 1000,
+      pausedMs: 0,
+      pauseStartedAt: null,
+      distanceM: 2500,
+      splitsKm: [],
+      splitsMi: [],
+    },
+  };
+  const open = { ...finished, id: 'open', session: { ...finished.session, status: 'running' as const, finishedAt: undefined, distanceM: 9000 } };
+  const totals = runTotals([finished, open], 'user', now);
+  assert.equal(totals.finished, 1);
+  assert.equal(totals.weekM, 2500);
 });
 
 test('achievements follow the rules', () => {

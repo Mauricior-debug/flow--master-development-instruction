@@ -20,7 +20,7 @@ export default function AppTabs() {
         <NativeTabs.Trigger.Icon sf="figure.run" md="directions_run" />
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="companion">
-        <NativeTabs.Trigger.Label>Companion</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label>Coach</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf="bubble.left.and.bubble.right.fill" md="forum" />
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="progress">

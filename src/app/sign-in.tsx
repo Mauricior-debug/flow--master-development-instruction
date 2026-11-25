@@ -23,7 +23,7 @@ export default function SignInScreen() {
         Welcome Back
       </T>
       <T color={colors.muted} style={{ marginTop: 6, marginBottom: 22 }}>
-        Good habits are always a good idea.
+        Your runs and coach are on this phone.
       </T>
       <View style={{ gap: 12 }}>
         <Field icon="mail-outline" value={email} onChangeText={setEmail} placeholder="Email" keyboard="email-address" />

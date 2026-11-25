@@ -1,5 +1,4 @@
 import { requestRecordingPermissionsAsync } from 'expo-audio';
-import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
@@ -15,10 +14,9 @@ export default function PermissionsScreen() {
   const colors = useTheme();
   const router = useRouter();
   const [rows, setRows] = useState<Row[]>([
-    { title: 'Location', detail: 'Required only when you start a GPS run.', status: 'Not asked' },
-    { title: 'Notifications', detail: 'Habit reminders on this device.', status: 'Not asked' },
-    { title: 'Camera', detail: 'Optional visual notes and profile photos.', status: 'Not asked' },
-    { title: 'Microphone', detail: 'Optional, for talking during a run.', status: 'Not asked' },
+    { title: 'Location', detail: 'Used when you start a GPS run, including in the background if you allow it.', status: 'Not asked' },
+    { title: 'Microphone', detail: 'Used when you talk to your coach during a run.', status: 'Not asked' },
+    { title: 'Notifications', detail: 'Optional reminders for a planned run. A run does not need them.', status: 'Not asked' },
   ]);
 
   function setStatus(title: string, status: string) {
@@ -33,9 +31,6 @@ export default function PermissionsScreen() {
       } else if (title === 'Notifications') {
         const granted = await ensureNotificationPermission();
         setStatus(title, granted ? 'Allowed' : 'Denied');
-      } else if (title === 'Camera') {
-        const result = await ImagePicker.requestCameraPermissionsAsync();
-        setStatus(title, result.granted ? 'Allowed' : 'Denied');
       } else {
         const result = await requestRecordingPermissionsAsync();
         setStatus('Microphone', result.granted ? 'Allowed' : 'Denied');
@@ -50,7 +45,7 @@ export default function PermissionsScreen() {
       <BrandHeader back />
       <T size={32} weight="bold">Permissions</T>
       <T color={colors.muted} style={{ marginTop: 6, marginBottom: 16 }}>
-        You can record habits without any of these. Location is only used when you start a run.
+        Location records the run. The microphone is only for talking to your coach. You can still run if you skip either one.
       </T>
       {rows.map((row) => (
         <Card key={row.title} style={{ marginBottom: 10 }}>
@@ -62,7 +57,8 @@ export default function PermissionsScreen() {
           </View>
         </Card>
       ))}
-      <PrimaryButton label="Done" onPress={() => router.back()} />
+      <T size={13} color={colors.faint} style={{ marginBottom: 12 }}>Camera form review is coming soon and is never required to record a run.</T>
+      <PrimaryButton label="Done" onPress={() => router.replace('/home')} />
     </Screen>
   );
 }

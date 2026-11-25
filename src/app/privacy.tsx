@@ -26,7 +26,7 @@ export default function PrivacyScreen() {
       />
       <ViewBlock
         title="Deletion"
-        body="Delete account removes your habits, check-ins, runs, messages, and settings from this device."
+        body="Delete account removes your runs, plan, messages, and settings from this device."
       />
     </Screen>
   );

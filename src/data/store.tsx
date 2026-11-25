@@ -101,6 +101,8 @@ function defaultCoach(userId: string): CoachProfile {
     personality: 'motivator',
     speak: 'balanced',
     voiceEnabled: true,
+    voiceProvider: 'auto',
+    voiceId: '',
   };
 }
 
@@ -247,7 +249,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const user = db.users.find((item) => item.id === db.sessionUserId) ?? null;
   const settings = db.settings.find((item) => item.userId === user?.id) ?? defaultSettings(user?.id ?? '');
-  const coach = db.coaches.find((item) => item.userId === user?.id) ?? defaultCoach(user?.id ?? '');
+  const coach = { ...defaultCoach(user?.id ?? ''), ...db.coaches.find((item) => item.userId === user?.id) };
 
   const value = useMemo<StoreValue>(() => {
     const requireUser = (): User | null => dbRef.current.users.find((item) => item.id === dbRef.current.sessionUserId) ?? null;
@@ -288,7 +290,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             userId: id,
             type: 'system',
             title: 'Welcome to PACE AI',
-            message: 'Your habits and runs stay on this device until you export or delete them.',
+            message: 'Your runs and coach stay on this device until you export or delete them.',
             read: false,
             createdAt: new Date().toISOString(),
           });
