@@ -9,7 +9,7 @@ import { BrandHeader, ErrorText, Field, LinkRow, PrimaryButton, Screen, Secondar
 import { useAuthGuard } from '../../../components/ui';
 import { useTheme } from '../../../theme/Theme';
 
-const avatar = require('../../../../assets/images/avatar-edit.jpg');
+const avatar = require('../../../../assets/images/avatar-edit.png');
 
 export default function EditProfileScreen() {
   const store = useAuthGuard();

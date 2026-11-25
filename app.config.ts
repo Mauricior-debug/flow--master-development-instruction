@@ -101,7 +101,11 @@ const config: ExpoConfig = {
   },
   extra: {
     eas: { projectId },
-    API_KEY: process.env.API_KEY ?? '',
+    API_KEY: process.env.API_KEY || process.env.MAPBOX_ACCESS_TOKEN || process.env.EXPO_PUBLIC_MAPBOX_TOKEN || '',
+    MAPBOX_ACCESS_TOKEN: process.env.MAPBOX_ACCESS_TOKEN || process.env.API_KEY || '',
+    EXPO_PUBLIC_MAPBOX_TOKEN: process.env.EXPO_PUBLIC_MAPBOX_TOKEN || process.env.API_KEY || process.env.MAPBOX_ACCESS_TOKEN || '',
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? '',
+    ELEVENLABS_API_KEY: process.env.ELEVENLABS_API_KEY ?? '',
     router: {},
   },
 };

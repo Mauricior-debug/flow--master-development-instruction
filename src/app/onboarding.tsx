@@ -10,36 +10,36 @@ import { useTheme } from '../theme/Theme';
 
 const slides = [
   {
-    title: 'Small Steps\nBig Changes',
-    body: 'Build habits, stay consistent, and become your best self with AI by your side.',
-    image: require('../../assets/images/onboarding-hero.jpg'),
-    alt: 'Companion celebrating habit check-ins',
-    points: [
-      ['flag-outline', 'Track your habits'],
-      ['sparkles-outline', 'Get AI-powered insights'],
-      ['ribbon-outline', 'Stay motivated daily'],
-    ],
-  },
-  {
     title: 'Never Run\nAlone Again',
-    body: 'An intelligent running companion that coaches, motivates and runs with you.',
-    image: require('../../assets/images/splash-hero.jpg'),
-    alt: 'Companion running beside habit tiles',
+    body: 'GPS, pace, and a coach who runs with you.',
+    image: require('../../assets/images/splash-mark.png'),
+    alt: 'PACE AI companion',
     points: [
-      ['navigate-outline', 'GPS distance and pace'],
-      ['chatbubble-ellipses-outline', 'A coach who talks with you'],
+      ['navigate-outline', 'GPS distance, pace, and route'],
+      ['chatbubble-ellipses-outline', 'A coach you can interrupt'],
       ['lock-closed-outline', 'Routes stay on your phone'],
     ],
   },
   {
-    title: 'A Coach\nWho Fits You',
-    body: 'Choose a personality, a goal, and how often you want to hear from them.',
-    image: require('../../assets/images/onboarding-hero.jpg'),
-    alt: 'Companion with a progress ring',
+    title: 'Talk while\nyou run',
+    body: 'Ask about pace, distance, or a walk break. Tracking continues if the coach goes quiet.',
+    image: require('../../assets/images/onboarding-hero.png'),
+    alt: 'Companion illustration',
+    points: [
+      ['mic-outline', 'Ask a question mid-run'],
+      ['speedometer-outline', 'Pace and split feedback'],
+      ['shield-checkmark-outline', 'Stop if something hurts'],
+    ],
+  },
+  {
+    title: 'A plan that\nfits you',
+    body: 'Choose a goal, how often you can run, and the coach you want to hear.',
+    image: require('../../assets/images/onboarding-hero.png'),
+    alt: 'Companion with a training plan',
     points: [
       ['happy-outline', 'Motivator, Strategist, or Calm'],
       ['volume-medium-outline', 'You choose when they speak'],
-      ['camera-outline', 'Camera stays optional'],
+      ['calendar-outline', 'Four weeks, with rest days'],
     ],
   },
 ] as const;
@@ -65,9 +65,7 @@ export default function OnboardingScreen() {
       <BrandHeader
         right={
           <Pressable accessibilityRole="button" accessibilityLabel="Skip" onPress={() => continueToSignUp(false)} style={({ pressed }) => [{ minHeight: 44, justifyContent: 'center' }, pressed && { opacity: 0.6 }]}>
-            <T weight="semibold" color={colors.muted}>
-              Skip
-            </T>
+            <T weight="semibold" color={colors.muted}>Skip</T>
           </Pressable>
         }
       />
@@ -84,12 +82,8 @@ export default function OnboardingScreen() {
       >
         {slides.map((slide) => (
           <View key={slide.title} style={{ width: page - 40, paddingRight: 8 }}>
-            <T size={34} weight="bold" center>
-              {slide.title}
-            </T>
-            <T color={colors.muted} center style={{ marginTop: 10 }}>
-              {slide.body}
-            </T>
+            <T size={34} weight="bold" center>{slide.title}</T>
+            <T color={colors.muted} center style={{ marginTop: 10 }}>{slide.body}</T>
             <Image source={slide.image} style={{ width: '100%', height: 250, marginTop: 8 }} contentFit="contain" accessibilityLabel={slide.alt} />
           </View>
         ))}
@@ -116,9 +110,7 @@ export default function OnboardingScreen() {
         <Ionicons name={consent ? 'checkbox' : 'square-outline'} size={22} color={consent ? colors.lime : colors.muted} />
         <T>
           I agree to the{' '}
-          <T color={colors.link} weight="semibold" onPress={() => router.push('/privacy')}>
-            Privacy Policy
-          </T>
+          <T color={colors.link} weight="semibold" onPress={() => router.push('/privacy')}>Privacy Policy</T>
         </T>
       </Pressable>
       <ErrorText>{error}</ErrorText>

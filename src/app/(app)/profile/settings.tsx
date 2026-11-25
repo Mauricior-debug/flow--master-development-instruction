@@ -46,7 +46,7 @@ export default function SettingsScreen() {
         <LinkRow icon="shield-checkmark-outline" title="Privacy Policy" detail="Read our privacy policy" onPress={() => router.push('/privacy')} />
         <LinkRow icon="watch-outline" title="Connected devices" detail="Location, health, and what this phone can do" onPress={() => router.push('/profile/devices')} />
         <LinkRow icon="card-outline" title="Subscription" detail="Free, and what a production build can bill" onPress={() => router.push('/profile/subscription')} />
-        <LinkRow icon="download-outline" title="Export my data" detail="A file of habits, runs, and messages" onPress={() => router.push('/profile/export')} />
+        <LinkRow icon="download-outline" title="Export my data" detail="A file of runs, your plan, and messages" onPress={() => router.push('/profile/export')} />
         <LinkRow
           icon="trash-outline"
           title="Delete Account"
@@ -55,7 +55,7 @@ export default function SettingsScreen() {
           onPress={() => {
             askConfirm({
               title: 'Delete your account?',
-              message: 'Habits, runs, messages, and settings on this device will be removed. This cannot be undone.',
+              message: 'Runs, your plan, messages, and settings on this device will be removed. This cannot be undone.',
               confirmLabel: 'Delete account',
               destructive: true,
               run: async () => {

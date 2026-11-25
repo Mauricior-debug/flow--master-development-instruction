@@ -48,7 +48,7 @@ export default function DevicesScreen() {
       <Card style={{ marginBottom: 10 }}>
         <T weight="bold">Apple Health and Health Connect</T>
         <T color={colors.muted} style={{ marginTop: 4 }}>
-          Not available in this Expo Go build. A production app can connect them. Runs you record here still save on this phone without a health store.
+          Coming soon. Runs you record here still save on this phone without Apple Health or Health Connect.
         </T>
       </Card>
       <Card>

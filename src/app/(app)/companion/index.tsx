@@ -8,7 +8,7 @@ import { xpTotal } from '../../../data/store';
 import { levelFor, PERSONALITIES } from '../../../lib/engine';
 import { useTheme } from '../../../theme/Theme';
 
-const hero = require('../../../../assets/images/onboarding-hero.jpg');
+const hero = require('../../../../assets/images/splash-mark.png');
 
 export default function CompanionHomeScreen() {
   const store = useAuthGuard();

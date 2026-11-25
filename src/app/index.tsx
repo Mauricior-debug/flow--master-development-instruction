@@ -7,7 +7,7 @@ import { ErrorText, PrimaryButton, Screen, T, Wordmark } from '../components/ui'
 import { useStore } from '../data/store';
 import { useTheme } from '../theme/Theme';
 
-const hero = require('../../assets/images/splash-hero.jpg');
+const hero = require('../../assets/images/splash-mark.png');
 
 export default function SplashScreen() {
   const store = useStore();
@@ -42,17 +42,17 @@ export default function SplashScreen() {
     <Screen scroll={false}>
       <View style={{ flex: 1, paddingHorizontal: 24, justifyContent: 'space-between' }}>
         <View style={{ alignItems: 'center', marginTop: 12 }}>
-          <Wordmark subtitle="Your AI Habit Companion" />
+          <Wordmark subtitle="Never Run Alone Again." />
         </View>
         <Image
           source={hero}
           style={{ width: '100%', height: 320 }}
           contentFit="contain"
-          accessibilityLabel="PACE AI companion running with habit icons"
+          accessibilityLabel="PACE AI companion ready to run with you"
         />
         <View style={{ gap: 16, marginBottom: 12 }}>
           <T size={32} weight="bold" center>
-            Build Better Habits{'\n'}A Brighter You
+            Never Run{'\n'}Alone Again
           </T>
           {failed ? (
             <View style={{ gap: 12 }}>
@@ -72,7 +72,7 @@ export default function SplashScreen() {
                 <Animated.View style={{ height: 8, width, backgroundColor: colors.lime, borderRadius: 99 }} />
               </View>
               <T color={colors.muted} center>
-                Loading your better tomorrow...
+                Getting your coach ready...
               </T>
             </>
           )}

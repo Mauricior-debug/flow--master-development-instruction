@@ -8,7 +8,7 @@ import { useStore } from '../../data/store';
 import { PERSONALITIES, type Personality } from '../../lib/engine';
 import { useTheme } from '../../theme/Theme';
 
-const hero = require('../../../assets/images/onboarding-hero.jpg');
+const hero = require('../../../assets/images/splash-mark.png');
 
 export default function PersonalityScreen() {
   const store = useStore();

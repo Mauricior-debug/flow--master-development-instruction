@@ -16,7 +16,7 @@ export default function GoalsScreen() {
     <Screen>
       <BrandHeader back />
       <T size={32} weight="bold">Running Goals</T>
-      <T color={colors.muted} style={{ marginTop: 6, marginBottom: 16 }}>What’s your main goal? This shapes the plan, not your habits.</T>
+      <T color={colors.muted} style={{ marginTop: 6, marginBottom: 16 }}>What’s your main goal? This shapes the next four weeks of training.</T>
       {GOALS.map((goal) => {
         const on = selected === goal.id;
         return (

@@ -14,11 +14,11 @@ export default function SubscriptionScreen() {
       <BrandHeader back />
       <T size={32} weight="bold">Subscription</T>
       <T color={colors.muted} style={{ marginTop: 6, marginBottom: 16 }}>
-        App Store and Google Play billing needs a production build. This preview cannot charge you.
+        Store billing is coming soon. This preview cannot charge you.
       </T>
       <Card style={{ marginBottom: 12, borderColor: !plus ? colors.lime : colors.stroke }}>
         <T weight="bold">Free</T>
-        <T color={colors.muted} style={{ marginTop: 4 }}>Habits, GPS runs, on-device coach, and a four-week plan.</T>
+        <T color={colors.muted} style={{ marginTop: 4 }}>GPS runs, an on-device coach, and a four-week plan.</T>
         <T color={colors.link} style={{ marginTop: 8 }}>{!plus ? 'Current plan' : 'Included'}</T>
       </Card>
       <Card style={{ borderColor: plus ? colors.lime : colors.stroke }}>

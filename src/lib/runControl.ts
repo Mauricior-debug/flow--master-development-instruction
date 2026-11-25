@@ -5,7 +5,10 @@ export type RunControl = {
   pause: () => void;
   resume: () => void;
   finish: () => void;
-  ask: (question: string) => string;
+  ask: (question: string) => Promise<string>;
+  askAudio: (uri: string) => Promise<string>;
+  interrupt: () => void;
+  voiceStatus: () => string;
 };
 
 let control: RunControl | null = null;

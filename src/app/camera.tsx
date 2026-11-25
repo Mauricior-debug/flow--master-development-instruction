@@ -37,7 +37,7 @@ export default function CameraSessionScreen() {
       <BrandHeader back />
       <T size={32} weight="bold">Camera Session</T>
       <T color={colors.muted} style={{ marginTop: 6, marginBottom: 12 }}>
-        Optional visual note. This does not detect hazards, traffic, or injuries, and a run never requires it.
+        Optional photo note. Form analysis is coming soon. This does not detect hazards, traffic, or injuries, and a run never requires it.
       </T>
       {!permission?.granted ? (
         <View style={{ gap: 12 }}>

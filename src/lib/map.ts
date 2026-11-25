@@ -2,11 +2,22 @@ import Constants from 'expo-constants';
 
 import { staticMapPath, type Point } from './engine';
 
+const MAP_NAMES = ['API_KEY', 'MAPBOX_ACCESS_TOKEN', 'EXPO_PUBLIC_MAPBOX_TOKEN'] as const;
+
+function clean(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 export function readMapKey(): string {
-  const fromProcess = process.env.API_KEY;
-  if (typeof fromProcess === 'string' && fromProcess.trim()) return fromProcess.trim();
-  const extra = Constants.expoConfig?.extra as { API_KEY?: unknown } | undefined;
-  if (typeof extra?.API_KEY === 'string' && extra.API_KEY.trim()) return extra.API_KEY.trim();
+  for (const name of MAP_NAMES) {
+    const fromProcess = clean(process.env[name]);
+    if (fromProcess) return fromProcess;
+  }
+  const extra = Constants.expoConfig?.extra as Record<string, unknown> | undefined;
+  for (const name of MAP_NAMES) {
+    const fromExtra = clean(extra?.[name]);
+    if (fromExtra) return fromExtra;
+  }
   return '';
 }
 

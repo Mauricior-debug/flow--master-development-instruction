@@ -6,6 +6,7 @@ export type RunSource = 'gps' | 'practice';
 export type RunStatus = 'running' | 'paused' | 'finished';
 export type Personality = 'motivator' | 'strategist' | 'calm';
 export type SpeakFrequency = 'quiet' | 'balanced' | 'chatty';
+export type VoiceProvider = 'auto' | 'openai' | 'elevenlabs' | 'device';
 export type Experience = 'new' | 'some' | 'steady';
 export type RunGoal = 'active' | '5k' | '10k' | 'half' | 'pace';
 export type CheckStatus = 'done' | 'skipped';
@@ -91,6 +92,8 @@ export type CoachProfile = {
   personality: Personality;
   speak: SpeakFrequency;
   voiceEnabled: boolean;
+  voiceProvider: VoiceProvider;
+  voiceId: string;
 };
 
 export type StoredRun = {
@@ -527,7 +530,7 @@ type CoachEvent =
 export function shouldSpeak(kind: CoachEvent['kind'], speak: SpeakFrequency): boolean {
   if (kind === 'finish' || kind === 'km') return true;
   if (speak === 'quiet') return false;
-  if (speak === 'balanced') return kind === 'pause' || kind === 'encourage';
+  if (speak === 'balanced') return kind === 'start' || kind === 'pause' || kind === 'encourage';
   return true;
 }
 
@@ -559,7 +562,7 @@ export function coachLine(event: CoachEvent, personality: Personality): string {
   }
   if (personality === 'strategist') return `Run saved. ${event.distance} in ${event.time}, average pace ${event.pace}.`;
   if (personality === 'calm') return `That is the run. ${event.distance} in ${event.time}. Be proud of the consistency.`;
-  return `You finished. ${event.distance} in ${event.time}, pace ${event.pace}. I am glad I was out there with you.`;
+  return `You finished. ${event.distance} in ${event.time}. Pace ${event.pace}. I am glad I was out there with you.`;
 }
 
 export type CoachContext = {
@@ -583,7 +586,10 @@ export function answerQuestion(question: string, ctx: CoachContext, personality:
   if (q.includes('time') || q.includes('long')) {
     return `${tone} Active time is ${ctx.time}. Distance ${ctx.distance}, pace ${ctx.pace}.`;
   }
-  if (q.includes('water') || q.includes('drink') || q.includes('tired') || q.includes('hurt')) {
+  if (q.includes('chest') || q.includes('dizzy') || q.includes('faint') || q.includes('pain') || q.includes('hurt') || q.includes('injury')) {
+    return 'Stop and walk. If this is chest pain, dizziness, or a sharp pain, end the run and get help. I cannot see the road or your body.';
+  }
+  if (q.includes('water') || q.includes('drink') || q.includes('tired') || q.includes('walk')) {
     return personality === 'calm'
       ? 'If you need water or a walk break, take it. The run still counts.'
       : 'Take water if you need it. A short walk break is smarter than forcing a bad patch.';
@@ -596,7 +602,8 @@ export function answerQuestion(question: string, ctx: CoachContext, personality:
 
 export function finishSummary(session: Session, unit: Units, personality: Personality): string {
   const distance = `${formatDistance(session.distanceM, unit)} ${unit}`;
-  const pace = `${formatPace(averagePace(session, unit))} /${unit}`;
+  const paceValue = averagePace(session, unit);
+  const pace = paceValue ? `${formatPace(paceValue)}/${unit}` : 'still settling';
   const time = formatDuration(activeMs(session, session.finishedAt ?? session.startedAt));
   return coachLine({ kind: 'finish', distance, pace, time }, personality);
 }
@@ -825,6 +832,28 @@ export const CHALLENGES = [
     reward: '400 XP',
   },
 ] as const;
+
+export function runTotals(runs: StoredRun[], userId: string, now = new Date()): { weekM: number; monthM: number; finished: number; weekCount: number } {
+  const today = todayKey(now);
+  const weekStart = addDays(today, -weekdayIndex(today));
+  let weekM = 0;
+  let monthM = 0;
+  let finished = 0;
+  let weekCount = 0;
+  for (const run of runs) {
+    if (run.userId !== userId || run.session.status !== 'finished') continue;
+    finished += 1;
+    const stamp = run.session.finishedAt ?? run.session.startedAt;
+    const when = todayKey(new Date(stamp));
+    const date = new Date(stamp);
+    if (when >= weekStart && when <= today) {
+      weekM += run.session.distanceM;
+      weekCount += 1;
+    }
+    if (date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear()) monthM += run.session.distanceM;
+  }
+  return { weekM, monthM, finished, weekCount };
+}
 
 export function monthKm(runs: StoredRun[], userId: string, now = new Date()): number {
   const month = now.getMonth();

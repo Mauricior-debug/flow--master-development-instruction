@@ -15,7 +15,7 @@ export default function FriendsScreen() {
     <Screen tab>
       <BrandHeader back />
       <T size={32} weight="bold">Friends</T>
-      <T color={colors.muted} style={{ marginTop: 6, marginBottom: 16 }}>Names stay on this device. Adding someone does not share your routes.</T>
+      <T color={colors.muted} style={{ marginTop: 6, marginBottom: 16 }}>A shared friends list is coming soon. Names you add stay on this phone and do not share your routes.</T>
       <Field icon="person-outline" value={name} onChangeText={setName} placeholder="Name" autoCapitalize="words" />
       {error ? <T color={colors.danger} style={{ marginTop: 8 }}>{error}</T> : null}
       <View style={{ marginTop: 12 }}>

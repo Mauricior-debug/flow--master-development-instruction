@@ -14,7 +14,7 @@ export default function LeaderboardScreen() {
       <BrandHeader back />
       <T size={32} weight="bold">Leaderboard</T>
       <T color={colors.muted} style={{ marginTop: 6, marginBottom: 16 }}>
-        Only your distance is shown. Routes are not published, and friends you add do not get invented results.
+        Shared ranks are coming soon. Only distance saved on this phone is shown. Routes are not published.
       </T>
       <Card>
         <T size={13} color={colors.link} weight="semibold">THIS MONTH</T>
