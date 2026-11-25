@@ -3,7 +3,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect } from 'react';
 import { View } from 'react-native';
 
-import { RouteMap } from '../components/RouteMap';
+import { PaceMap } from '../components/PaceMap';
 import { BrandHeader, Card, PrimaryButton, Screen, SecondaryButton, T } from '../components/ui';
 import { xpTotal, useStore } from '../data/store';
 import { activeMs, averagePace, formatDistance, formatDuration, formatPace, levelFor } from '../lib/engine';
@@ -50,7 +50,15 @@ export default function ResultsScreen() {
         </Card>
       </View>
       <View style={{ marginTop: 14 }}>
-        <RouteMap points={run.session.points} height={200} />
+        <View style={{ height: 240, borderRadius: 18, overflow: 'hidden' }}>
+          <PaceMap
+            prefs={{ style: 'dark', route: true, markers: true, elevation: false, poi: false }}
+            tracks={[{ id: run.id, coordinates: run.session.points.map((point) => [point.lon, point.lat]), color: '#B6FF00', width: 5 }]}
+            user={run.session.points.length ? { lon: run.session.points[run.session.points.length - 1].lon, lat: run.session.points[run.session.points.length - 1].lat } : null}
+            follow={false}
+            interactive
+          />
+        </View>
       </View>
       <T size={20} weight="bold" style={{ marginTop: 16, marginBottom: 8 }}>Splits</T>
       {splits.length === 0 ? (

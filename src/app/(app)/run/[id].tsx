@@ -2,7 +2,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { View } from 'react-native';
 import { Image } from 'expo-image';
 
-import { RouteMap } from '../../../components/RouteMap';
+import { PaceMap } from '../../../components/PaceMap';
 import { BrandHeader, Card, Screen, T } from '../../../components/ui';
 import { useAuthGuard } from '../../../components/ui';
 import { averagePace, formatDistance, formatDuration, formatPace } from '../../../lib/engine';
@@ -29,7 +29,13 @@ export default function RunDetailScreen() {
       <T size={32} weight="bold">{run.goalLabel}</T>
       <T color={colors.muted} style={{ marginTop: 4 }}>{run.session.source === 'practice' ? 'Practice route' : 'GPS route'}</T>
       <View style={{ marginTop: 16 }}>
-        <RouteMap points={run.session.points} height={220} />
+        <View style={{ height: 240, borderRadius: 18, overflow: 'hidden' }}>
+          <PaceMap
+            prefs={{ style: 'dark', route: true, markers: true, elevation: false, poi: false }}
+            tracks={[{ id: run.id, coordinates: run.session.points.map((point) => [point.lon, point.lat]), color: '#B6FF00', width: 5 }]}
+            follow={false}
+          />
+        </View>
       </View>
       <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
         <Card style={{ flex: 1 }}><T size={12} color={colors.muted}>Distance</T><T weight="bold">{`${formatDistance(run.session.distanceM, unit)} ${unit}`}</T></Card>
