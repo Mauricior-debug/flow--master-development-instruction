@@ -24,3 +24,5 @@ They are the reference. Do not import anything from this folder into the shipped
 - `wren-source/images/Onboarding-onboarding-illustration.png` — screen asset: Onboarding-onboarding-illustration.png (screen: Onboarding)
 - `wren-source/images/Edit-Profile-user-avatar.png` — screen asset: Edit-Profile-user-avatar.png (screen: Edit Profile)
 - `wren-source/images/image.png` — reference: image.png
+- `wren-source/images/Screenshot-4.39.png` — screenshot: Screenshot 4.39.png
+- `wren-source/images/Screenshot-5.50.png` — screenshot: Screenshot 5.50.png
